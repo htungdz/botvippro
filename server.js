@@ -4128,10 +4128,12 @@ app.post('/api/auth', (req, res) => {
   } catch (e) {}
   logLine(`user auth ok: ${found.label} device=${deviceHash.slice(0, 8)} ip=${ip}`);
   res.json({
+    ok: true,
     token,
     expiresIn: exp - Date.now(),
     label: found.label,
     expiresAt: found.expiresAt || null,
+    expires_at: found.expiresAt || null,
     deviceLimit: 1,
     devicesUsed: (found.deviceHashes || []).length,
     keyExpiresAt: found.expiresAt || null,
@@ -4139,6 +4141,57 @@ app.post('/api/auth', (req, res) => {
     remainMs: found.expiresAt ? Math.max(0, found.expiresAt - Date.now()) : null
   });
 });
+
+// Tương thích UI gốc gọi /api/activate
+app.post('/api/activate', (req, res) => {
+  // normalize body: device_id → deviceId
+  if (req.body && req.body.device_id && !req.body.deviceId) req.body.deviceId = req.body.device_id;
+  // reuse auth by internal redirect via same handler stack — call next by re-posting logic
+  req.url = '/api/auth';
+  // fallback: duplicate minimal forward
+  if (!rateLimit(req.ip)) return res.status(429).json({ error: 'Bạn thử quá nhiều lần. Vui lòng đợi 1 phút.', ok: false });
+  const plain = String(req.body?.key || '').trim();
+  if (!plain) return res.status(400).json({ error: 'Vui lòng nhập key VIP.', ok: false });
+  const found = findKey(plain);
+  if (!found || found.status === 'revoked') return res.status(401).json({ error: 'Key không hợp lệ hoặc đã bị thu hồi.', ok: false });
+  if (isExpired(found)) return res.status(401).json({ error: 'Key đã hết hạn. Hãy nhận hoặc mua key mới trên Telegram.', ok: false });
+  const deviceId = String(req.body?.deviceId || req.body?.device_id || '').trim();
+  if (!deviceId || deviceId.length > 200) return res.status(400).json({ error: 'Không xác định được thiết bị. Hãy tải lại trang và thử lại.', ok: false });
+  const deviceHash = sha256(deviceId);
+  const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+  if (!Array.isArray(found.deviceHashes)) found.deviceHashes = [];
+  if (found.deviceHashes.length === 0) {
+    found.deviceHashes = [deviceHash];
+    found.lockedIp = ip || null;
+    found.boundAt = Date.now();
+    found.deviceLimit = 1;
+  } else if (!found.deviceHashes.includes(deviceHash)) {
+    return res.status(403).json({ error: 'Key đã gắn 1 thiết bị khác. Không thể reset / đổi máy.', ok: false });
+  }
+  found.lastUsed = Date.now();
+  found.uses = Number(found.uses || 0) + 1;
+  found.lastIp = ip || found.lastIp;
+  saveKeys();
+  const requestedExpiry = Date.now() + TOKEN_TTL_MS;
+  const exp = found.expiresAt ? Math.min(requestedExpiry, found.expiresAt) : requestedExpiry;
+  const token = sign({ type: 'user', keyId: found.id, deviceHash, exp });
+  const ua = String(req.headers['user-agent'] || '').slice(0, 300);
+  logLine(`activate ${found.label || found.id} ip=${ip} ua=${ua.slice(0,40)}`);
+  res.json({
+    ok: true,
+    token,
+    expiresIn: exp - Date.now(),
+    expires_at: found.expiresAt || null,
+    expiresAt: found.expiresAt || null,
+    label: found.label,
+    deviceLimit: 1,
+    devicesUsed: (found.deviceHashes || []).length,
+    keyExpiresAt: found.expiresAt || null,
+    expireSoon: found.expiresAt ? (found.expiresAt - Date.now() < 24 * 3600000) : false,
+    remainMs: found.expiresAt ? Math.max(0, found.expiresAt - Date.now()) : null
+  });
+});
+
 app.post('/api/admin/login', (req, res) => {
   if (!rateLimit(req.ip)) return res.status(429).json({ error: 'Bạn thử quá nhiều lần. Vui lòng đợi 1 phút.' });
   const password = String(req.body?.password || '');
