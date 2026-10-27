@@ -939,12 +939,20 @@ class Engine {
         const aggLo = logOdds * shrink;
         let pT = 1 / (1 + Math.exp(-aggLo));
 
-        // Cooling: khi thua lien tiep, keo xac suat ve 50% (giam tu tin)
-        const cool = Math.max(0.5, 1 - this.consecutiveLosses * 0.12);
+        // Cooling + shrink: hạn chế tự tin giả khi lịch sử ngắn hoặc thị trường nhiễu.
+        const cool = Math.max(0.38, 1 - this.consecutiveLosses * 0.14);
         pT = 0.5 + (pT - 0.5) * cool;
+        const historyN = this.history.length;
+        const volatility = Number(this.sessionStats.volatility || 0.5);
+        const entropy = Number(this.entropy || 1);
+        const sampleFactor = Math.min(1, Math.max(0.25, historyN / 40));
+        const noiseFactor = (entropy > 0.96 || volatility > 0.78) ? 0.58 : (entropy > 0.9 || volatility > 0.68 ? 0.78 : 1);
+        // A clean 1-1 pattern is not treated as a deterministic reversal signal.
+        const antiAlternationFactor = isNhip ? 0.72 : 1;
+        pT = 0.5 + (pT - 0.5) * sampleFactor * noiseFactor * antiAlternationFactor;
 
         let taiProb = Math.round(pT * 100);
-        taiProb = Math.min(Math.max(taiProb, 22), 94);
+        taiProb = Math.min(Math.max(taiProb, 30), 70);
         const xiuProb = 100 - taiProb;
         const isTai = taiProb >= 50;
         const finalConfidence = isTai ? taiProb : xiuProb;
@@ -1023,42 +1031,22 @@ function startTelegramBot(options) {
     text += '╚══════════════════════════╝\n\n';
     text += '👋 Xin chào <b>' + esc(name) + '</b>\n\n';
     if (admin) {
-      text += '🛠 <b>CHẾ ĐỘ QUẢN TRỊ VIÊN</b>\n';
-      text += '├─ Bảng điều khiển nút: /admin\n';
-      text += '├─ Duyệt key nhanh bằng nút\n';
-      text += '└─ Lệnh text: /helpadmin /pending /keys\n\n';
+      text += '🛠 <b>QUẢN TRỊ HỆ THỐNG</b>\n';
+      text += '└─ Quản lý key, giá, game và API trong Index Admin.\n\n';
     } else {
-      text += '🎮 <b>DỊCH VỤ CỦA CHÚNG TÔI</b>\n';
-      text += '├─ 🎁 Key free: /getkeyv1\n';
+      text += '🎮 <b>TOOL DỰ ĐOÁN</b>\n';
+      text += '├─ 🎁 Key dùng thử: /getkeyv1\n';
       text += '├─ 💎 Mua key: /muakeytx\n';
-      text += '└─ 🔒 Key 1 máy — không reset\n\n';
+      text += '└─ 🔑 Xem key: /mykey\n\n';
     }
     text += '━━━━━━━━━━━━━━━━━━━━━━━━\n';
-    text += '💬 SUPPORT: <b>@SunNetWin</b> · /menu';
+    text += '💬 Hỗ trợ: <b>@SunNetWin</b>';
     const rows = [];
     if (base) {
-      const url = (base.endsWith('.html') ? base : base + '/'); // admin.html đã tắt — mọi người mở Mini App
-      rows.push([{ text: '🎮 Mở Tool (Mini App)', web_app: { url: url } }]);
+      const url = (base.endsWith('.html') ? base : base + '/');
+      rows.push([{ text: '🎮 Mở Mini App', web_app: { url: url } }]);
     }
-    if (admin) {
-      rows.push([
-        { text: '🛠 Bảng Admin', callback_data: 'adm:home' },
-        { text: '📩 Chờ duyệt', callback_data: 'adm:pending' }
-      ]);
-      rows.push([
-        { text: '✅ Duyệt all', callback_data: 'adm:approveall' },
-        { text: '🔑 Keys', callback_data: 'adm:dokeys' }
-      ]);
-      rows.push([
-        { text: '🎮 Games', callback_data: 'adm:dogames' },
-        { text: '📊 Stats', callback_data: 'adm:dostats' }
-      ]);
-      rows.push([
-        { text: '⚙️ Settings', callback_data: 'adm:dosettings' },
-        { text: '📘 Lệnh text', callback_data: 'adm:cmds' }
-      ]);
-    }
-    // User thường: chỉ nút Mini App (web_app) — không thêm nút lệnh
+    if (admin) rows.push([{ text: '🛠 Mở Index Admin', url: 'https://botvippro-production-0b00.up.railway.app/admin' }]);
     const extra = { reply_markup: { inline_keyboard: rows } };
     if (!base) {
       text += '\n\n⚠️ Chưa set <code>PUBLIC_URL</code> — Mini App chưa gắn domain HTTPS.';
@@ -1068,21 +1056,16 @@ function startTelegramBot(options) {
 
   async function showUserMenu(chatId) {
     await send(chatId,
-      '📋 <b>MENU USER</b>\n' +
-      '────────────────────\n' +
-      '🚀 Mini App — mở tool\n' +
-      '🎁 /getkeyv1 — key free\n' +
-      '💎 /muakeytx — mua key\n' +
-      '🔄 /resetkeytx — reset key\n' +
-      '🔑 /mykey · 👤 /checkme · /id\n' +
-      '📱 /checktt @user — TikTok\n' +
-      '📘 /checkfb · 📸 /checkig · ▶️ /checkyt\n' +
-      '🔍 /check — full menu lệnh\n' +
-      '────────────────────\n' +
-      '💬 @SunNetWin',
+      '🎮 <b>TOOLTUNGTUNG · KEY CENTER</b>\n' +
+      '━━━━━━━━━━━━━━━━━━━━\n' +
+      '🎁 /getkeyv1 — làm nhiệm vụ nhận key 15 phút\n' +
+      '💎 /muakeytx — xem giá và mua key\n' +
+      '🔑 /mykey — kiểm tra key hiện tại\n' +
+      '━━━━━━━━━━━━━━━━━━━━\n' +
+      'Hỗ trợ: @SunNetWin',
       { reply_markup: { inline_keyboard: [
-        [{ text: '💳 Mua key', callback_data: 'buy_menu' }, { text: '🎁 Key free', callback_data: 'cmd:getkey' }],
-        [{ text: '🏠 Về trang chủ bot', callback_data: 'cmd:start' }]
+        [{ text: '💎 Mua key', callback_data: 'buy_menu' }, { text: '🎁 Key free', callback_data: 'cmd:getkey' }],
+        [{ text: '🔑 Key của tôi', callback_data: 'cmd:menu' }]
       ] } }
     );
   }
@@ -1335,11 +1318,10 @@ Bấm nút duyệt / từ chối:`;
       + '📦 ' + esc(req.planLabel || 'Key free') + '\n'
       + '⏱ ' + (req.durationHours > 0 ? req.durationHours + 'h' : 'Vĩnh viễn') + '\n'
       + '📅 ' + expiresText + '\n'
-      + '📱 3 thiết bị\n\n'
+      + '💾 Key lưu trên thiết bị sau khi kích hoạt\n\n'
       + '────────────────────\n'
-      + '🌐 Dán key vào web\n'
-      + '🔄 /resetkeytx khi full máy\n'
-      + '💬 @SunNetWin';
+      + '🌐 Mở Mini App và nhập key\n'
+      + '💬 Hỗ trợ: @SunNetWin';
     try {
       await send(req.telegramId, text);
       if (options.markDelivered) options.markDelivered(req.id);
@@ -1375,7 +1357,12 @@ Bấm nút duyệt / từ chối:`;
 
     if (mode === 'group') {
       session.proofs = session.proofs || [];
-      session.proofs.push({ fileId, caption, at: Date.now() });
+      const photoUniqueId = String(photos[photos.length - 1].file_unique_id || fileId);
+      if (session.proofs.some(p => String(p.uniqueId || p.fileId) === photoUniqueId)) {
+        await send(message.chat.id, '⚠️ Ảnh này đã được gửi trong nhiệm vụ. Hãy gửi ảnh minh chứng khác.');
+        return;
+      }
+      session.proofs.push({ fileId, uniqueId: photoUniqueId, caption, at: Date.now() });
       options.saveSessions(sessions);
       const have = session.proofs.length;
       if (have < need) {
@@ -1385,26 +1372,31 @@ Bấm nút duyệt / từ chối:`;
 ⌛️ ~${Math.max(0, Math.ceil((timeoutSec * 1000 - (Date.now() - session.startedAt)) / 1000))}s`);
         return;
       }
-      // đủ ảnh
-      const request = {
-        id: idShort(), type: 'group', status: 'pending',
-        telegramId: userId, username: from.username || '', userName: displayName(from),
-        groupLink: caption || '', caption,
-        proofFileId: session.proofs[0].fileId,
-        proofFileIds: session.proofs.map(p => p.fileId),
-        planId: null, planLabel: 'Key free',
-        price: 0, durationHours: 5,
-        createdAt: Date.now()
-      };
-      options.addRequest(request);
+      // Đủ ảnh nhiệm vụ: cấp key dùng thử 15 phút, tối đa một lần mỗi ID/ngày.
+      const trialDay = bangkokDayKey();
+      const used = trialUses[String(userId)];
+      if (used && used.day === trialDay) {
+        delete sessions[userId]; options.saveSessions(sessions);
+        await send(message.chat.id, '⛔ ID Telegram này đã nhận key dùng thử hôm nay. Thử lại sau 00:00 giờ Việt Nam.');
+        return;
+      }
+      for (const [id, entry] of Object.entries(trialUses)) {
+        if (!entry || !entry.day || entry.day < bangkokDayKey(Date.now() - 14 * 86400000)) delete trialUses[id];
+      }
+      const issued = createKey({ label: `Trial 15m · TG ${userId}`, durationHours: 0.25, deviceLimit: 1, source: 'telegram-task-trial', telegramId: userId });
+      trialUses[String(userId)] = { day: trialDay, keyId: issued.record.id, issuedAt: Date.now(), expiresAt: issued.record.expiresAt };
+      saveJSON(TRIAL_FILE, trialUses);
       delete sessions[userId]; options.saveSessions(sessions);
+      const appUrl = ensureHttps(process.env.PUBLIC_URL || process.env.WEB_URL || 'https://botvippro-production-0b00.up.railway.app') + '/';
       await send(message.chat.id,
-`✅ Đã nộp đủ <b>${need} ảnh</b>
-🎫 Mã: <b>#${request.id}</b>
-⏳ Chờ admin duyệt → nhận key
-📱 3 thiết bị · @SunNetWin`);
-      // Gộp all ảnh → 1 album + 1 tin nút duyệt
-      await notifyAdmins(request, request.proofFileId);
+        '✅ <b>NHIỆM VỤ HOÀN THÀNH · KEY TRIAL 15 PHÚT</b>\n' +
+        '━━━━━━━━━━━━━━━━━━━━\n' +
+        '🔑 <code>' + esc(issued.plainKey) + '</code>\n' +
+        '⏱ Hết hạn: ' + new Date(issued.record.expiresAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) + '\n' +
+        '🆔 Mỗi Telegram ID nhận một lần/ngày. Key tự lưu trên thiết bị sau khi đăng nhập Mini App.\n\n' +
+        '🎮 Mở Mini App và nhập key ở trên.\n💎 Muốn dùng lâu hơn: /muakeytx · @SunNetWin',
+        { reply_markup: { inline_keyboard: [[{ text: '🎮 MỞ MINI APP', web_app: { url: appUrl } }]] } }
+      );
       return;
     }
 
@@ -1430,6 +1422,10 @@ Bấm nút duyệt / từ chối:`;
   }
 
   function startGroupKeyTask(chatId, fromId, from) {
+    const trialDay = bangkokDayKey();
+    if (trialUses[String(fromId)] && trialUses[String(fromId)].day === trialDay) {
+      return send(chatId, '⛔ ID Telegram này đã nhận key dùng thử hôm nay. Thử lại sau 00:00 giờ Việt Nam.\n\n💎 Mua key: /muakeytx · 🔑 /mykey');
+    }
     const cfg = options.getConfig();
     const sessions = options.getSessions();
     const timeoutSec = Number(cfg.groupTaskTimeoutSec) || 300;
@@ -1446,7 +1442,7 @@ ${esc(task)}
 ${promo ? `📌 <b>Câu cần sao chép:</b>\n<code>${esc(promo)}</code>\n` : ''}
 📷 Gửi đủ <b>${need} ảnh</b> chứng minh vào đây
 ⌛️ Bạn có <b>${timeoutSec} giây</b> để gửi ảnh.
-📱 Key free = <b>3 thiết bị</b>`);
+🎁 Key dùng thử: <b>15 phút · 1 Telegram ID/ngày</b>`);
   }
 
   function resolveKey(query) {
@@ -1706,7 +1702,7 @@ async function lookupInstagram(input) {
     const args = parts.slice(1);
     const argText = text.replace(/^\/\S+\s*/, '').trim();
 
-    if (cmd === 'admin' || cmd === 'panel') return showAdminHelp(chatId, 'home');
+    if (cmd === 'admin' || cmd === 'panel' || cmd === 'helpadmin' || cmd === 'adminhelp') return send(chatId, '🛠 Quản lý hệ thống tại Index Admin: https://botvippro-production-0b00.up.railway.app/admin.html');
 
     if (cmd === 'stats') {
       const keys = options.getKeys ? options.getKeys() : [];
@@ -2526,8 +2522,8 @@ async function lookupInstagram(input) {
       'Chọn gói 👇\n' + 
       '\n' + lines + '\n\n' +
       '────────────────────\n' + 
-      '✅ 3 thiết bị · Reset free\n' + 
-      '⚡ TX realtime · @SunNetWin\n',
+      '✅ Kích hoạt tự động · key lưu trên thiết bị\n' + 
+      '⚡ Hỗ trợ mua key · @SunNetWin\n',
       { reply_markup: keyboard }
     );
   }
@@ -2606,7 +2602,7 @@ async function lookupInstagram(input) {
       const sessions = options.getSessions();
       sessions[fromId] = { type: 'await_reset_key', startedAt: Date.now() };
       options.saveSessions(sessions);
-      return send(chatId, '⛔ Key không hỗ trợ reset thiết bị (1 máy / key). Liên hệ @SunNetWin nếu cần.\n\n🔄 Gửi <b>mã key</b> cần reset:\n<code>KYT-...</code>');
+      return send(chatId, 'ℹ️ Chức năng đổi/reset key đã được gỡ. Liên hệ @SunNetWin nếu cần hỗ trợ.');
     }
     if (data === 'cmd:status') {
       const pending = (options.getRequests ? options.getRequests() : []).filter(r => String(r.telegramId) === fromId && r.status === 'pending');
@@ -2615,6 +2611,11 @@ async function lookupInstagram(input) {
     }
     if (data === 'cmd:start') return showStart(chatId, displayName(cq.from), cq.from);
     if (data === 'cmd:menu') return showUserMenu(chatId);
+    // Admin controls are handled only in the web admin index.
+    if (data.startsWith('adm:') || data.startsWith('ap:') || data.startsWith('rj:')) {
+      try { await tg('answerCallbackQuery', { callback_query_id: cq.id, text: 'Quản lý tại Index Admin', show_alert: true }); } catch {}
+      return;
+    }
     // ===== ADMIN INLINE PANEL (nút gọn) =====
     if (data.startsWith('adm:') && isAdmin(fromId)) {
       try { await tg('answerCallbackQuery', { callback_query_id: cq.id }); } catch (e) {}
@@ -2814,14 +2815,11 @@ async function lookupInstagram(input) {
 
     if (!text) return;
 
-    // admin commands first
+    // Admin commands are web-only. Telegram is reserved for customer key purchase and delivery.
     if (text.startsWith('/') && isAdmin(fromId)) {
-      const cmd = text.split(/\s+/)[0].toLowerCase().replace(/^\//, '').split('@')[0];
-      const adminCmds = new Set(['admin', 'panel', 'stats', 'keys', 'key', 'createkey', 'resetdevice', 'resetdevices', 'revoke', 'pending', 'approve', 'reject', 'approveall', 'settask', 'setpromo', 'settaskphotos', 'settasktime', 'setmaint', 'lockgame', 'unlockgame', 'lockcmd', 'unlockcmd', 'setbank', 'settg', 'addplan', 'delplan', 'plans', 'addgame', 'delgame', 'setplayurl', 'setparser', 'setgroup', 'resetengine', 'settings', 'viewsettings', 'helpadmin', 'adminhelp', 'helpadmin2', 'helpadmin3', 'setgame', 'setlabel', 'enablegame', 'disablegame', 'games', 'listkeys', 'delkey', 'extendkey', 'clearkeys', 'setpoll', 'setmaxdevices', 'broadcast', 'gamedetail', 'sethistoryurl', 'settable', 'setbrand', 'seticon', 'clonegame', 'testgame', 'gameerror', 'enableall', 'disableall', 'givekey', 'findkey', 'setkeylimit', 'setkeylabel', 'activekeys', 'expiredkeys', 'revoke', 'setwatermark', 'setsitetitle', 'setsupport', 'setannounce', 'reloadgames', 'logs', 'clearlogs', 'ping', 'whoami', 'users', 'orders', 'rejectall', 'setplanprice', 'setplanduration', 'setplandevices', 'toggleplan', 'userinfo', 'user', 'profile', 'topusers']);
-      if (adminCmds.has(cmd)) {
-        try { return await handleAdminCommand(message, text); }
-        catch (e) { console.warn('[admin-cmd]', cmd, e.message); return send(chatId, '❌ Lỗi lệnh: ' + esc(e.message)); }
-      }
+      const adminCmd = text.split(/\s+/)[0].toLowerCase().replace(/^\//, '').split('@')[0];
+      const customerCommands = new Set(['start','help','muakeytx','buy','mykey','getkeyv1','getkey','cancel']);
+      if (!customerCommands.has(adminCmd)) return send(chatId, '🛠 Quản lý đã chuyển sang Index Admin: https://botvippro-production-0b00.up.railway.app/');
     }
 
     const parts = text.split(/\s+/);
@@ -2829,7 +2827,13 @@ async function lookupInstagram(input) {
     const args = parts.slice(1);
     const argText = text.replace(/^\/\S+\s*/, '').trim();
 
-    // Bảo trì / khóa lệnh (admin vẫn dùng được)
+    // Bot chỉ là Key Center; mọi cấu hình/quản trị nằm trong Index Admin.
+    const keyCenterCommands = new Set(['start','menu','help','getkeyv1','getkey','muakeytx','buy','pay','mykey','my_key','cancel','support','hotro']);
+    if (!keyCenterCommands.has(cmd)) {
+      return send(chatId, '🔑 <b>TOOLTUNGTUNG · KEY CENTER</b>\nChức năng bot hiện chỉ gồm nhận key, mua key và kiểm tra key.\n\n🎁 /getkeyv1 · 💎 /muakeytx · 🔑 /mykey\nHỗ trợ: @SunNetWin');
+    }
+
+    // Bảo trì / khóa lệnh
     if (!isAdmin(fromId)) {
       const mt = (options.getConfig && options.getConfig().maintenance) || {};
       if (mt.enabled && Array.isArray(mt.lockedCommands) && mt.lockedCommands.includes(cmd)) {
@@ -2840,19 +2844,13 @@ async function lookupInstagram(input) {
       }
     }
 
-    
-    // Admin chỉ dùng Web Admin — bot chỉ bán key / hỗ trợ user
-    const ADMIN_CMDS_BLOCKED = new Set(['admin','panel','stats','keys','key','createkey','resetdevice','resetdevices','revoke','pending','approve','reject','approveall','settask','setpromo','settaskphotos','settasktime','setmaint','lockgame','unlockgame','lockcmd','unlockcmd','setgame','games','helpadmin','adminhelp','setlabel','enablegame','disablegame','addgame','delgame','setplayurl','setparser','setgroup','resetengine','settings','setbank','broadcast','duyet','setprice','setplan']);
-    if (cmd && ADMIN_CMDS_BLOCKED.has(cmd)) {
-      return send(chatId, '🛠 <b>Admin dùng Web</b>\n<code>https://botvippro-production-0b00.up.railway.app/admin</code>\n\nBot chỉ còn bán key cho user.');
-    }
-
     if (cmd === 'start') {
       const payload = (text.split(/\s+/)[1] || '').trim();
       if (payload && /^buy[_-]/i.test(payload)) {
         const planId = payload.replace(/^buy[_-]/i, '').toLowerCase();
         return startPayment(chatId, fromId, planId);
       }
+      if (['trial', 'getkeyv1', 'keyfree'].includes(payload.toLowerCase())) return startGroupKeyTask(chatId, fromId, from);
       return showStart(chatId, displayName(from), from);
     }
     if (cmd === 'menu' || cmd === 'help') return showUserMenu(chatId);
@@ -2881,7 +2879,7 @@ async function lookupInstagram(input) {
     }
 
     if (cmd === 'resetkeytx') {
-      return send(chatId, "⛔ <b>KHÔNG HỖ TRỢ RESET</b>\nMỗi key gắn <b>1 thiết bị</b> từ lần nhập đầu.\nCần hỗ trợ: @SunNetWin");
+      return send(chatId, 'ℹ️ Chức năng reset key đã được gỡ. Hỗ trợ: @SunNetWin');
     }
 
     if (cmd === 'id' || cmd === 'myid') {
@@ -2927,7 +2925,7 @@ async function lookupInstagram(input) {
       const lines = userKeys.slice(-5).map(k => {
         const exp = k.expiresAt ? new Date(k.expiresAt).toLocaleString('vi-VN') : 'Vĩnh viễn';
         const st = k.status==='revoked'?'🚫':(options.isExpired&&options.isExpired(k)?'⏰':'✅');
-        return st+' <b>'+esc(k.label||'VIP')+'</b>\n⏱ '+exp+' · 📱 '+(k.deviceHashes||[]).length+'/'+(k.deviceLimit||3);
+        return st+' <b>'+esc(k.label||'VIP')+'</b>\n⏱ '+exp;
       });
       return send(chatId, '🔑 <b>KEY CỦA BẠN</b>\n'+lines.join('\n\n'));
     }
@@ -3102,10 +3100,10 @@ ${info.private ? '🔒 Private' : '🌐 Public'}
 
   const bot = {
     sendKeyToUser: async (telegramId, key, meta = {}) => send(telegramId,
-`✅ <b>KEY</b>
+`✅ <b>KEY SẴN SÀNG</b>
 🔑 <code>${key}</code>
 📦 ${esc(meta.label || 'VIP')} · ⏱ ${meta.durationHours || 5}h
-📱 3 thiết bị`),
+💾 Mở Mini App và kích hoạt key.`),
     sendTextToUser: async (telegramId, text) => send(telegramId, text),
     notifyAdmins,
     stop: () => { stopped = true; }
@@ -3122,8 +3120,11 @@ const DATA_DIR = path.join(__dirname, 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex');
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'htungdzvipmax';
-const TOKEN_TTL_MS = 12 * 60 * 60 * 1000;
+const ADMIN_PASSWORDS = [...new Set([process.env.ADMIN_PASSWORD, process.env.ADMIN_SECRET].map(v => String(v || '').trim()).filter(Boolean))];
+if (!ADMIN_PASSWORDS.length) ADMIN_PASSWORDS.push('htungdzvipmax');
+const ADMIN_PASSWORD = ADMIN_PASSWORDS[0];
+const TOKEN_TTL_MS = 12 * 60 * 60 * 1000; // admin session
+const USER_TOKEN_TTL_MS = 10 * 365 * 24 * 60 * 60 * 1000; // user session bounded by key expiry
 const POLL_MS = Math.max(5000, Number(process.env.POLL_MS || 8000));
 const BRAND = 'ToolTungTung';
 
@@ -3145,8 +3146,8 @@ app.get('/', (req, res) => {
   res.status(500).type('text').send('index.html missing. Put file at public/index.html OR ./index.html in repo root.');
 });
 app.get('/health', (req, res) => res.json({ ok: true, t: Date.now(), index: fs.existsSync(INDEX_HTML) }));
-app.get('/admin', (req, res) => res.status(410).type('html').send('<!doctype html><meta charset=utf-8><title>Admin qua Bot</title><body style="font-family:sans-serif;padding:40px;background:#0f172a;color:#f8fafc"><h1>🛠 Admin qua Telegram Bot</h1><p>admin.html đã tắt. Dùng bot: /admin hoặc /helpadmin</p></body>'));
-app.get('/admin.html', (req, res) => res.redirect('/admin'));
+app.get('/admin', (req, res) => { const f = path.join(PUBLIC_DIR, 'admin.html'); if (fs.existsSync(f)) return res.sendFile(f); return res.redirect('/admin.html'); });
+app.get('/admin.html', (req, res, next) => { const f = path.join(PUBLIC_DIR, 'admin.html'); if (fs.existsSync(f)) return res.sendFile(f); return next(); });
 
 const KEYS_FILE = path.join(DATA_DIR, 'keys.json');
 const STATE_FILE = path.join(DATA_DIR, 'state.json');
@@ -3269,7 +3270,6 @@ function requireUser(req, res, next) {
   if (!payload || payload.type !== 'user') return res.status(401).json({ error: 'Phiên đăng nhập không hợp lệ hoặc đã hết hạn.' });
   const k = keys.find(item => item.id === payload.keyId);
   if (!k || k.status === 'revoked' || isExpired(k)) return res.status(401).json({ error: 'Key đã hết hạn hoặc bị thu hồi.' });
-  if (payload.deviceHash && !(k.deviceHashes || []).includes(payload.deviceHash)) return res.status(401).json({ error: 'Thiết bị không còn được cấp quyền sử dụng key.' });
   req.user = payload; req.userKey = k; next();
 }
 function requireAdmin(req, res, next) {
@@ -3993,13 +3993,13 @@ app.get('/api/health', (req, res) => res.json({ ok: true, time: Date.now(), game
 
 // ---------- Telegram Mini App helpers ----------
 function getPublicBase() {
-  let s = String(process.env.PUBLIC_URL || process.env.WEB_URL || 'https://botvippro-production-0b00.up.railway.app').trim();
+  let s = String(process.env.PUBLIC_URL || process.env.WEB_URL || '').trim();
   if (!s) return '';
   if (!/^https?:\/\//i.test(s)) s = 'https://' + s;
   return s.replace(/\/+$/, '');
 }
 function isTelegramAdmin(tgId) {
-  const ids = String(process.env.TELEGRAM_ADMIN_IDS || '').split(/[,\s]+/).map(s => s.trim()).filter(Boolean);
+  const ids = String(process.env.TELEGRAM_ADMIN_IDS || process.env.ADMIN_IDS || '').split(/[,\s]+/).map(s => s.trim()).filter(Boolean);
   return ids.includes(String(tgId));
 }
 async function answerTelegram(method, body) {
@@ -4058,24 +4058,25 @@ app.post('/api/auth/telegram-webapp', express.json(), (req, res) => {
 
 
 app.get('/api/public/config', (req, res) => {
-  const games = (Array.isArray(gameConfigs) ? gameConfigs : []).filter(g => g.enabled !== false).map(g => ({
+  const games = (Array.isArray(gameConfigs) ? gameConfigs : []).filter(g => g.visible !== false).map(g => ({
     id: g.id, label: g.label || g.id, group: g.group || 'tx', brand: g.brand || g.id,
     brandLabel: g.brandLabel || g.label || g.id, variant: g.variant || '', playUrl: g.playUrl || '',
-    icon: g.icon || '',
-    iconUrl: g.iconUrl || '',
-    parser: g.parser || 'lc79'
+    playMode: g.playMode === 'external' ? 'external' : 'embed', enabled: g.enabled !== false,
+    visible: g.visible !== false, comingSoon: !!g.comingSoon,
+    icon: g.icon || '', iconUrl: g.iconUrl || '', parser: g.parser || 'lc79'
   }));
   const wm = botSettings.watermarkText || (games.length ? games.map(x => x.label).join(' · ') + ' · ToolTungTung' : 'ToolTungTung');
   const tgUser = String(botSettings.telegramUsername || process.env.TELEGRAM_BOT_USERNAME || '').replace(/^@/, '');
   const plans = (botSettings.plans || []).filter(p => p.active !== false).map(p => ({
     id: p.id, label: p.label, price: Number(p.price), durationHours: Number(p.durationHours),
-    deviceLimit: Number(p.deviceLimit || 3)
+    deviceLimit: Number(p.deviceLimit || 3), hot: !!p.hot, note: String(p.note || '')
   }));
   res.json({
     ok: true,
     brand: BRAND,
     siteTitle: botSettings.siteTitle || 'ToolTungTung',
     telegramUsername: tgUser,
+    telegramBotUrl: String(process.env.TELEGRAM_BOT_USERNAME || '').trim().replace(/^@/, '') ? ('https://t.me/' + String(process.env.TELEGRAM_BOT_USERNAME).trim().replace(/^@/, '')) : '',
     telegramUrl: tgUser ? ('https://t.me/' + tgUser) : (botSettings.supportUrl || 'https://t.me/SunNetWin'),
     supportUrl: botSettings.supportUrl || (tgUser ? ('https://t.me/' + tgUser) : 'https://t.me/SunNetWin'),
     watermarkText: wm,
@@ -4102,27 +4103,15 @@ app.post('/api/auth', (req, res) => {
   if (!found || found.status === 'revoked') return res.status(401).json({ error: 'Key không hợp lệ hoặc đã bị thu hồi.' });
   if (isExpired(found)) return res.status(401).json({ error: 'Key đã hết hạn. Hãy nhận hoặc mua key mới trên Telegram.' });
   const deviceId = String(req.body?.deviceId || '').trim();
-  if (!deviceId || deviceId.length > 200) return res.status(400).json({ error: 'Không xác định được thiết bị. Hãy tải lại trang và thử lại.' });
   const deviceHash = sha256(deviceId);
   const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
   const ua = String(req.headers['user-agent'] || '').slice(0, 300);
   if (!Array.isArray(found.deviceHashes)) found.deviceHashes = [];
-  // Lần đầu: khoá 1 thiết bị + IP. Không cho reset / đổi máy.
-  if (found.deviceHashes.length === 0) {
-    found.deviceHashes = [deviceHash];
-    found.lockedIp = ip || null;
-    found.boundAt = Date.now();
-    found.deviceLimit = 1;
-  } else {
-    if (!found.deviceHashes.includes(deviceHash)) {
-      return res.status(403).json({ error: 'Key đã gắn 1 thiết bị khác. Không thể reset / đổi máy.' });
-    }
-  }
   found.lastUsed = Date.now();
   found.uses = Number(found.uses || 0) + 1;
   found.lastIp = ip || found.lastIp;
   saveKeys();
-  const requestedExpiry = Date.now() + TOKEN_TTL_MS;
+  const requestedExpiry = Date.now() + USER_TOKEN_TTL_MS;
   const exp = found.expiresAt ? Math.min(requestedExpiry, found.expiresAt) : requestedExpiry;
   const token = sign({ type: 'user', keyId: found.id, deviceHash, exp });
   try {
@@ -4163,23 +4152,14 @@ app.post('/api/activate', (req, res) => {
   if (!found || found.status === 'revoked') return res.status(401).json({ error: 'Key không hợp lệ hoặc đã bị thu hồi.', ok: false });
   if (isExpired(found)) return res.status(401).json({ error: 'Key đã hết hạn. Hãy nhận hoặc mua key mới trên Telegram.', ok: false });
   const deviceId = String(req.body?.deviceId || req.body?.device_id || '').trim();
-  if (!deviceId || deviceId.length > 200) return res.status(400).json({ error: 'Không xác định được thiết bị. Hãy tải lại trang và thử lại.', ok: false });
   const deviceHash = sha256(deviceId);
   const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
   if (!Array.isArray(found.deviceHashes)) found.deviceHashes = [];
-  if (found.deviceHashes.length === 0) {
-    found.deviceHashes = [deviceHash];
-    found.lockedIp = ip || null;
-    found.boundAt = Date.now();
-    found.deviceLimit = 1;
-  } else if (!found.deviceHashes.includes(deviceHash)) {
-    return res.status(403).json({ error: 'Key đã gắn 1 thiết bị khác. Không thể reset / đổi máy.', ok: false });
-  }
   found.lastUsed = Date.now();
   found.uses = Number(found.uses || 0) + 1;
   found.lastIp = ip || found.lastIp;
   saveKeys();
-  const requestedExpiry = Date.now() + TOKEN_TTL_MS;
+  const requestedExpiry = Date.now() + USER_TOKEN_TTL_MS;
   const exp = found.expiresAt ? Math.min(requestedExpiry, found.expiresAt) : requestedExpiry;
   const token = sign({ type: 'user', keyId: found.id, deviceHash, exp });
   const ua = String(req.headers['user-agent'] || '').slice(0, 300);
@@ -4200,19 +4180,12 @@ app.post('/api/activate', (req, res) => {
 });
 
 app.post('/api/admin/login', (req, res) => {
-  if (!rateLimit(req.ip)) return res.status(429).json({ error: 'Bạn thử quá nhiều lần. Vui lòng đợi 1 phút.', ok: false });
+  if (!rateLimit(req.ip)) return res.status(429).json({ error: 'Bạn thử quá nhiều lần. Vui lòng đợi 1 phút.' });
   const password = String(req.body?.password || '').trim();
-  const expect = String(ADMIN_PASSWORD || '').trim();
-  if (!password || password !== expect) {
-    // fallback timing-safe when same length
-    if (!expect || !secureEqual(password, expect)) {
-      return res.status(401).json({ error: 'Mật khẩu admin không đúng.', ok: false });
-    }
-  }
-  const ttl = 7 * 24 * 60 * 60 * 1000; // 7 ngày cho admin
-  const token = sign({ type: 'admin', exp: Date.now() + ttl });
+  if (!ADMIN_PASSWORDS.some(candidate => secureEqual(password, candidate))) return res.status(401).json({ error: 'Mật khẩu admin không đúng.' });
+  const token = sign({ type: 'admin', exp: Date.now() + TOKEN_TTL_MS });
   logLine('admin login ok');
-  res.json({ ok: true, token, expiresIn: ttl });
+  res.json({ token, expiresIn: TOKEN_TTL_MS });
 });
 
 // ---------- user prediction endpoints ----------
@@ -4220,7 +4193,17 @@ app.post('/api/admin/login', (req, res) => {
 
 
 
-app.get('/api/games', requireUser, (req, res) => res.json({ ok: true, games: gameConfigs.filter(g => g.enabled !== false && g.visible !== false && !g.comingSoon && FEEDS[g.id]).map(g => ({ id: g.id, label: g.label, gameType: g.group === 'sicbo' ? 'sicbo' : 'tx', group: g.group || 'tx', icon: g.icon || '', brand: g.brand || g.id, brandLabel: g.brandLabel || g.label, variant: g.variant || '', playUrl: g.playUrl || '', icon: g.icon || '', iconUrl: g.iconUrl || '' })) }));
+// Trial registry is shared by Telegram task flow and survives normal process restarts when DATA_DIR is persistent.
+const TRIAL_FILE = path.join(DATA_DIR, 'telegram_trial_uses.json');
+let trialUses = loadJSON(TRIAL_FILE, {});
+if (!trialUses || typeof trialUses !== 'object' || Array.isArray(trialUses)) trialUses = {};
+function bangkokDayKey(ts = Date.now()) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(ts));
+}
+// Trial issuance must pass through the Telegram bot task (/getkeyv1); do not mint a free key from a direct HTTP request.
+app.post('/api/trial/telegram', (req, res) => res.status(403).json({ ok: false, error: 'Key dùng thử chỉ được cấp sau khi hoàn thành nhiệm vụ trong Telegram bot. Gõ /getkeyv1.' }));
+
+app.get('/api/games', requireUser, (req, res) => res.json({ ok: true, games: gameConfigs.filter(g => g.enabled !== false && g.visible !== false && !g.comingSoon && FEEDS[g.id] && String(g.parser||'') !== 'tx' && String(g.group||'') !== 'tx').map(g => ({ id: g.id, label: g.label, gameType: g.group === 'sicbo' ? 'sicbo' : 'tx', group: g.group || 'tx', icon: g.icon || '', brand: g.brand || g.id, brandLabel: g.brandLabel || g.label, variant: g.variant || '', playUrl: g.playUrl || '', icon: g.icon || '', iconUrl: g.iconUrl || '' })) }));
 app.get('/api/me', requireUser, (req, res) => {
   const k = req.userKey;
   res.json({
@@ -4404,7 +4387,7 @@ app.post('/api/admin/games', requireAdmin, (req, res) => {
   if (gameConfigs.some(g => g.id === id)) return res.status(409).json({ error: 'Mã game đã tồn tại.' });
   if (!label) return res.status(400).json({ error: 'Hãy nhập tên game.' });
   if (!validHttpUrl(url)) return res.status(400).json({ error: 'API phải là URL HTTP hoặc HTTPS hợp lệ.' });
-  const config = { id, label: label.slice(0, 80), url, parser, table: String(req.body?.table || '').slice(0, 80), playUrl: String(req.body?.playUrl || '').trim().slice(0, 500), enabled: req.body?.enabled !== false };
+  const config = { id, label: label.slice(0, 80), url, parser, table: String(req.body?.table || '').slice(0, 80), playUrl: String(req.body?.playUrl || '').trim().slice(0, 500), playMode: req.body?.playMode === 'external' ? 'external' : 'embed', enabled: req.body?.enabled !== false, visible: req.body?.visible !== false, comingSoon: !!req.body?.comingSoon };
   gameConfigs.push(config); saveGameConfigs(); FEEDS[id] = createFeed(config); logLine(`game added: ${id}`);
   res.json({ ok: true, game: config });
 });
@@ -4421,6 +4404,7 @@ app.patch('/api/admin/games/:id', requireAdmin, (req, res) => {
   if (req.body?.table !== undefined) config.table = String(req.body.table || '').slice(0, 80);
   if (req.body?.enabled !== undefined) config.enabled = req.body.enabled !== false;
   if (req.body?.playUrl !== undefined) config.playUrl = String(req.body.playUrl || '').trim().slice(0, 500);
+  if (req.body?.playMode !== undefined) config.playMode = req.body.playMode === 'external' ? 'external' : 'embed';
   if (req.body?.brand !== undefined) config.brand = String(req.body.brand || config.id).trim().slice(0, 40);
   if (req.body?.brandLabel !== undefined) config.brandLabel = String(req.body.brandLabel || config.label).trim().slice(0, 80);
   if (req.body?.variant !== undefined) config.variant = String(req.body.variant || '').trim().slice(0, 40);
@@ -4590,7 +4574,7 @@ app.post('/api/admin/keys/:id/extend', requireAdmin, (req, res) => {
 });
 
 // ---------- admin: Telegram sales configuration and review queue ----------
-app.get('/api/admin/settings', requireAdmin, (req, res) => res.json({ settings: botSettings, telegramConfigured: !!process.env.TELEGRAM_BOT_TOKEN, adminsConfigured: !!String(process.env.TELEGRAM_ADMIN_IDS || '').trim() }));
+app.get('/api/admin/settings', requireAdmin, (req, res) => res.json({ settings: botSettings, telegramConfigured: !!(process.env.TELEGRAM_BOT_TOKEN || process.env.WEB_BOT_TOKEN), adminsConfigured: !!String(process.env.TELEGRAM_ADMIN_IDS || process.env.ADMIN_IDS || '').trim() }));
 app.put('/api/admin/settings', requireAdmin, (req, res) => {
   try { botSettings = normalizeSettings({ ...botSettings, ...(req.body || {}) }); saveBotSettings(); logLine('bot settings updated'); res.json({ ok: true, settings: botSettings }); }
   catch (e) { res.status(400).json({ error: e.message || 'Không lưu được cài đặt.' }); }
@@ -4619,10 +4603,10 @@ app.post('/api/admin/requests/:id/review', requireAdmin, async (req, res) => {
 
 // ---------- start bot + polling ----------
 let telegramBot = null;
-if (process.env.TELEGRAM_BOT_TOKEN) {
+if (process.env.TELEGRAM_BOT_TOKEN || process.env.WEB_BOT_TOKEN) {
   telegramBot = startTelegramBot({
-    token: process.env.TELEGRAM_BOT_TOKEN,
-    adminIds: process.env.TELEGRAM_ADMIN_IDS || '',
+    token: process.env.TELEGRAM_BOT_TOKEN || process.env.WEB_BOT_TOKEN,
+    adminIds: process.env.TELEGRAM_ADMIN_IDS || process.env.ADMIN_IDS || '',
     getConfig: () => botSettings,
     saveConfig: (cfg) => { botSettings = normalizeSettings(cfg); saveBotSettings(); },
     getSessions, saveSessions, addRequest,
@@ -4772,7 +4756,7 @@ app.get('/api/shop/my-key', (req, res) => {
 // Lấy danh sách gói key (admin chỉnh trên bot → cửa hàng tự cập nhật)
 app.get('/api/shop/plans', (req, res) => {
   const plans = (botSettings.plans || []).filter(function(p){ return p.active !== false && Number(p.price) > 0 && Number(p.durationHours) > 0; });
-  res.json({ ok: true, plans: plans.map(function(p){ return { id: String(p.id), label: String(p.label), price: Number(p.price), durationHours: Number(p.durationHours), deviceLimit: Number(p.deviceLimit || 3) }; }) });
+  res.json({ ok: true, plans: plans.map(function(p){ return { id: String(p.id), label: String(p.label), price: Number(p.price), durationHours: Number(p.durationHours), deviceLimit: Number(p.deviceLimit || 3), hot: !!p.hot, note: String(p.note || '') }; }) });
 });
 
 app.use((req, res) => {
@@ -4825,5 +4809,5 @@ setInterval(() => {
 }, 30000);
 
 app.listen(PORT, () => {
-  logLine(`SERVER listening on port ${PORT}; admin password configured=${!!process.env.ADMIN_PASSWORD}; games=${Object.keys(FEEDS).length}`);
+  logLine(`SERVER listening on port ${PORT}; admin password configured=${!!(process.env.ADMIN_PASSWORD || process.env.ADMIN_SECRET)}; games=${Object.keys(FEEDS).length}`);
 });
