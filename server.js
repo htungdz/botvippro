@@ -1014,7 +1014,7 @@ function startTelegramBot(options) {
 
   // ─── USER MENU (command only, no buttons) ───────────────
   async function showStart(chatId, name, from) {
-    const base = ensureHttps(process.env.PUBLIC_URL || process.env.WEB_URL || '');
+    const base = ensureHttps(process.env.PUBLIC_URL || process.env.WEB_URL || 'https://botvippro-production-0b00.up.railway.app');
     const admin = isAdmin(from && from.id);
     let text = '';
     text += '╔══════════════════════════╗\n';
@@ -2840,6 +2840,13 @@ async function lookupInstagram(input) {
       }
     }
 
+    
+    // Admin chỉ dùng Web Admin — bot chỉ bán key / hỗ trợ user
+    const ADMIN_CMDS_BLOCKED = new Set(['admin','panel','stats','keys','key','createkey','resetdevice','resetdevices','revoke','pending','approve','reject','approveall','settask','setpromo','settaskphotos','settasktime','setmaint','lockgame','unlockgame','lockcmd','unlockcmd','setgame','games','helpadmin','adminhelp','setlabel','enablegame','disablegame','addgame','delgame','setplayurl','setparser','setgroup','resetengine','settings','setbank','broadcast','duyet','setprice','setplan']);
+    if (cmd && ADMIN_CMDS_BLOCKED.has(cmd)) {
+      return send(chatId, '🛠 <b>Admin dùng Web</b>\n<code>https://botvippro-production-0b00.up.railway.app/admin</code>\n\nBot chỉ còn bán key cho user.');
+    }
+
     if (cmd === 'start') {
       const payload = (text.split(/\s+/)[1] || '').trim();
       if (payload && /^buy[_-]/i.test(payload)) {
@@ -3986,7 +3993,7 @@ app.get('/api/health', (req, res) => res.json({ ok: true, time: Date.now(), game
 
 // ---------- Telegram Mini App helpers ----------
 function getPublicBase() {
-  let s = String(process.env.PUBLIC_URL || process.env.WEB_URL || '').trim();
+  let s = String(process.env.PUBLIC_URL || process.env.WEB_URL || 'https://botvippro-production-0b00.up.railway.app').trim();
   if (!s) return '';
   if (!/^https?:\/\//i.test(s)) s = 'https://' + s;
   return s.replace(/\/+$/, '');
@@ -4193,12 +4200,19 @@ app.post('/api/activate', (req, res) => {
 });
 
 app.post('/api/admin/login', (req, res) => {
-  if (!rateLimit(req.ip)) return res.status(429).json({ error: 'Bạn thử quá nhiều lần. Vui lòng đợi 1 phút.' });
-  const password = String(req.body?.password || '');
-  if (!secureEqual(password, ADMIN_PASSWORD)) return res.status(401).json({ error: 'Mật khẩu admin không đúng.' });
-  const token = sign({ type: 'admin', exp: Date.now() + TOKEN_TTL_MS });
+  if (!rateLimit(req.ip)) return res.status(429).json({ error: 'Bạn thử quá nhiều lần. Vui lòng đợi 1 phút.', ok: false });
+  const password = String(req.body?.password || '').trim();
+  const expect = String(ADMIN_PASSWORD || '').trim();
+  if (!password || password !== expect) {
+    // fallback timing-safe when same length
+    if (!expect || !secureEqual(password, expect)) {
+      return res.status(401).json({ error: 'Mật khẩu admin không đúng.', ok: false });
+    }
+  }
+  const ttl = 7 * 24 * 60 * 60 * 1000; // 7 ngày cho admin
+  const token = sign({ type: 'admin', exp: Date.now() + ttl });
   logLine('admin login ok');
-  res.json({ token, expiresIn: TOKEN_TTL_MS });
+  res.json({ ok: true, token, expiresIn: ttl });
 });
 
 // ---------- user prediction endpoints ----------
@@ -4206,7 +4220,7 @@ app.post('/api/admin/login', (req, res) => {
 
 
 
-app.get('/api/games', requireUser, (req, res) => res.json({ ok: true, games: gameConfigs.filter(g => g.enabled !== false && g.visible !== false && !g.comingSoon && FEEDS[g.id] && String(g.parser||'') !== 'tx' && String(g.group||'') !== 'tx').map(g => ({ id: g.id, label: g.label, gameType: g.group === 'sicbo' ? 'sicbo' : 'tx', group: g.group || 'tx', icon: g.icon || '', brand: g.brand || g.id, brandLabel: g.brandLabel || g.label, variant: g.variant || '', playUrl: g.playUrl || '', icon: g.icon || '', iconUrl: g.iconUrl || '' })) }));
+app.get('/api/games', requireUser, (req, res) => res.json({ ok: true, games: gameConfigs.filter(g => g.enabled !== false && g.visible !== false && !g.comingSoon && FEEDS[g.id]).map(g => ({ id: g.id, label: g.label, gameType: g.group === 'sicbo' ? 'sicbo' : 'tx', group: g.group || 'tx', icon: g.icon || '', brand: g.brand || g.id, brandLabel: g.brandLabel || g.label, variant: g.variant || '', playUrl: g.playUrl || '', icon: g.icon || '', iconUrl: g.iconUrl || '' })) }));
 app.get('/api/me', requireUser, (req, res) => {
   const k = req.userKey;
   res.json({
