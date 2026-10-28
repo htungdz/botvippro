@@ -111,6 +111,9 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;back
 
 .section-note{background:var(--primary-soft);border:1px solid #bfdbfe;color:#1e40af;border-radius:10px;padding:10px 12px;font-size:13px;margin-bottom:14px}
 hr.sep{border:none;border-top:1px solid var(--line);margin:18px 0}
+
+.proof-viewer{position:fixed;inset:0;z-index:99999;background:rgba(15,23,42,.72);display:flex;align-items:center;justify-content:center;padding:16px}.proof-viewer[hidden]{display:none!important}.proof-box{width:min(760px,100%);max-height:92vh;overflow:auto;background:#fff;border:1px solid #dbe3ed;border-radius:16px;padding:14px;box-shadow:0 18px 60px #0004}.proof-box button{margin-bottom:10px}.proof-box img{display:block;max-width:100%;max-height:72vh;object-fit:contain;margin:auto;border-radius:10px}.proof-box p{color:#475569;font-size:13px}.btn.sm{min-height:36px}
+@media(max-width:700px){.topbar,.topbar-inner,.header,.head{height:auto!important;min-height:unset;flex-wrap:wrap;gap:10px;padding:12px!important}.tabs,.nav-tabs{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px!important;width:100%}.tabs button,.nav-tabs button{min-width:0;padding:10px 8px!important;font-size:12px}.container,.wrap,.main{padding-left:10px!important;padding-right:10px!important}.grid2,.grid3,.cards-grid{grid-template-columns:minmax(0,1fr)!important}.stats,.stat-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:8px!important}.card{padding:13px!important;border-radius:14px!important}.row-actions{display:flex;flex-wrap:wrap;gap:8px}.row-actions .btn,.btn{min-height:40px}.table-wrap{max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}table{min-width:600px}.f input,.f select,.f textarea,input,select,textarea{max-width:100%;font-size:16px!important}.proof-viewer{padding:8px}}
 </style>
 </head>
 <body>
@@ -275,6 +278,9 @@ hr.sep{border:none;border-top:1px solid var(--line);margin:18px 0}
           <label class="f">Spam: số lệnh / cửa sổ<input id="spamCmdLimit" type="number" min="3" max="20"/></label>
           <label class="f">Spam: cửa sổ (giây)<input id="spamWindowSec" type="number" min="5" max="60"/></label>
           <label class="f">Spam: khoá (giây)<input id="spamLockSec" type="number" min="10" max="300"/></label>
+          <label class="switch"><input id="predictionCalibrationEnabled" type="checkbox" checked/> Giảm tự tin quá mức cho TX/MD5</label>
+          <label class="f">Giới hạn tự tin TX/MD5 (%)<input id="predictionConfidenceCap" type="number" min="50" max="85"/></label>
+          <label class="f">Số phiên tối thiểu để tự hiệu chỉnh<input id="predictionMinSamples" type="number" min="5" max="100"/></label>
         </div>
       </div>
       <div class="card">
@@ -290,7 +296,9 @@ hr.sep{border:none;border-top:1px solid var(--line);margin:18px 0}
         <h2>Giao diện &amp; thông tin chung</h2>
         <div class="grid2">
           <label class="f">Tiêu đề site<input id="siteTitle"/></label>
-          <label class="f">Username Telegram bot<input id="telegramUsername" placeholder="khong can @"/></label>
+          <label class="f">Username Telegram bot<input id="telegramUsername" placeholder="không cần @"/></label>
+          <label class="f">Link bot mua key / nhiệm vụ<input id="telegramBotUrl" placeholder="https://t.me/TenBot"/></label>
+          <label class="f">ID kênh nhận bill & góp ý sau duyệt<input id="feedbackChannelId" placeholder="@kenh_phan_hoi hoặc -100..."/></label>
           <label class="f">Link hỗ trợ<input id="supportUrl" placeholder="https://t.me/..."/></label>
           <label class="f">Chữ watermark<input id="watermarkText"/></label>
           <label class="f">Thông báo trang chủ<textarea id="announceText"></textarea></label>
@@ -804,12 +812,17 @@ hr.sep{border:none;border-top:1px solid var(--line);margin:18px 0}
       set('spamCmdLimit', s.spamCmdLimit ?? 5);
       set('spamWindowSec', s.spamWindowSec ?? 10);
       set('spamLockSec', s.spamLockSec ?? 30);
+      $('predictionCalibrationEnabled').checked = s.predictionCalibrationEnabled !== false;
+      set('predictionConfidenceCap', s.predictionConfidenceCap ?? 68);
+      set('predictionMinSamples', s.predictionMinSamples ?? 12);
       set('groupTaskText', s.groupTaskText || '');
       set('groupPromoText', s.groupPromoText || '');
       set('groupTaskPhotos', s.groupTaskPhotos ?? 3);
       set('groupTaskTimeoutSec', s.groupTaskTimeoutSec ?? 300);
       set('siteTitle', s.siteTitle || '');
       set('telegramUsername', s.telegramUsername || '');
+      set('telegramBotUrl', s.telegramBotUrl || '');
+      set('feedbackChannelId', s.feedbackChannelId || '');
       set('supportUrl', s.supportUrl || '');
       set('watermarkText', s.watermarkText || '');
       set('announceText', s.announceText || '');
@@ -840,12 +853,17 @@ hr.sep{border:none;border-top:1px solid var(--line);margin:18px 0}
         spamCmdLimit: num('spamCmdLimit', 5),
         spamWindowSec: num('spamWindowSec', 10),
         spamLockSec: num('spamLockSec', 30),
+        predictionCalibrationEnabled: $('predictionCalibrationEnabled').checked,
+        predictionConfidenceCap: num('predictionConfidenceCap', 68),
+        predictionMinSamples: num('predictionMinSamples', 12),
         groupTaskText: $('groupTaskText').value,
         groupPromoText: $('groupPromoText').value,
         groupTaskPhotos: num('groupTaskPhotos', 3),
         groupTaskTimeoutSec: num('groupTaskTimeoutSec', 300),
         siteTitle: $('siteTitle').value.trim(),
         telegramUsername: $('telegramUsername').value.trim().replace(/^@/, ''),
+        telegramBotUrl: $('telegramBotUrl').value.trim(),
+        feedbackChannelId: $('feedbackChannelId').value.trim(),
         supportUrl: $('supportUrl').value.trim(),
         watermarkText: $('watermarkText').value.trim(),
         announceText: $('announceText').value,
@@ -1064,17 +1082,17 @@ hr.sep{border:none;border-top:1px solid var(--line);margin:18px 0}
       $('tbReq').innerHTML = list.map((req) => {
         const st = req.status || '';
         const cls = st === 'approved' ? 'live' : st === 'pending' ? 'pend' : st === 'rejected' ? 'bad' : '';
-        const actions = st === 'pending'
-          ? `<button class="btn ok sm" data-ok="${esc(req.id)}">Duyệt</button>
-             <button class="btn bad sm" data-no="${esc(req.id)}">Từ chối</button>`
-          : '—';
+        const actions = (req.proofAttached || req.proofCount) ? `<button class="btn sm" data-proof="${esc(req.id)}">Xem ảnh${req.proofCount > 1 ? ' (' + req.proofCount + ')' : ''}</button> ` : '';
+        const reviewActions = st === 'pending'
+          ? `<button class="btn ok sm" data-ok="${esc(req.id)}">Duyệt</button> <button class="btn bad sm" data-no="${esc(req.id)}">Từ chối</button>` : '—';
+        const typeLabel = ({payment:'Bill mua key',trial:'Dùng thử 15 phút',feedback:'Góp ý',reset:'Reset',group:'Nhiệm vụ'})[req.type] || req.type || '';
         return `<tr>
           <td><code>${esc(req.id)}</code></td>
-          <td>${esc(req.type || '')}</td>
-          <td>${esc(req.telegramId || '')}<br>${esc(req.name || req.username || '')}</td>
+          <td>${esc(typeLabel)}${req.caption ? '<br><small>'+esc(req.caption)+'</small>' : ''}</td>
+          <td>${esc(req.telegramId || '')}<br>${esc(req.name || req.userName || req.username || '')}</td>
           <td>${esc(req.planLabel || req.note || '')}</td>
           <td><span class="pill ${cls}">${esc(st)}</span></td>
-          <td style="white-space:nowrap">${actions}</td>
+          <td style="white-space:nowrap">${actions}${reviewActions}</td>
         </tr>`;
       }).join('') || '<tr><td colspan="6" class="empty">Không có yêu cầu</td></tr>';
       const review = async (id, approved) => {
@@ -1089,6 +1107,11 @@ hr.sep{border:none;border-top:1px solid var(--line);margin:18px 0}
       };
       $('tbReq').querySelectorAll('[data-ok]').forEach((b) => { b.onclick = () => review(b.dataset.ok, true); });
       $('tbReq').querySelectorAll('[data-no]').forEach((b) => { b.onclick = () => review(b.dataset.no, false); });
+      $('tbReq').querySelectorAll('[data-proof]').forEach((b) => { b.onclick = async () => {
+        try { const res = await fetch('/api/admin/requests/' + encodeURIComponent(b.dataset.proof) + '/proof', { headers: { Authorization: 'Bearer ' + token }, cache: 'no-store' }); if (!res.ok) { let j={}; try { j=await res.json(); } catch {} throw new Error(j.error || 'Không tải được ảnh'); }
+          const blob = await res.blob(); const img = $('proofImage'); if (img.dataset.objectUrl) URL.revokeObjectURL(img.dataset.objectUrl); const obj = URL.createObjectURL(blob); img.src=obj; img.dataset.objectUrl=obj; $('proofCaption').textContent='Ảnh minh chứng của yêu cầu #' + b.dataset.proof; $('proofViewer').hidden=false;
+        } catch (e) { toast(e.message, 1); }
+      }; });
     } catch (e) { toast(e.message, 1); }
   }
   $('btnRefreshReq').onclick = loadRequests;
@@ -1126,5 +1149,7 @@ hr.sep{border:none;border-top:1px solid var(--line);margin:18px 0}
   else showLogin();
 })();
 </script>
-</body>
+<div id="proofViewer" class="proof-viewer" hidden><div class="proof-box"><button type="button" id="proofClose" class="btn">Đóng ảnh</button><img id="proofImage" alt="Ảnh minh chứng"/><p id="proofCaption"></p></div></div><script>
+(function(){var c=document.getElementById('proofClose'),v=document.getElementById('proofViewer'),im=document.getElementById('proofImage');if(c&&v)c.onclick=function(){v.hidden=true;if(im&&im.dataset.objectUrl){URL.revokeObjectURL(im.dataset.objectUrl);im.dataset.objectUrl='';im.removeAttribute('src')}};if(v)v.addEventListener('click',function(e){if(e.target===v)c&&c.click()})})();
+</script></body>
 </html>
