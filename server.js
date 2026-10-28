@@ -1018,11 +1018,11 @@ function startTelegramBot(options) {
     .replace(/&#(\d+);/g, (_, d) => { try { return String.fromCodePoint(parseInt(d, 10)); } catch { return ''; } });
   const esc = s => String(decodeHtmlEntities(s)).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const fmt = n => Number(n || 0).toLocaleString('vi-VN');
-  const ensureHttps = u => { let s = String(u || '').trim(); if (!s) return ''; if (!/^https?:\/\//i.test(s)) s = 'https://' + s; return s.replace(/\/+$/, ''); };
+  const ensureHttps = u => { let s = String(u || '').trim(); if (!s) return ''; s = s.replace(/^http:\/\//i, 'https://'); if (!/^https:\/\//i.test(s)) s = 'https://' + s; try { const x = new URL(s); if (['localhost','127.0.0.1','::1'].includes(x.hostname.toLowerCase()) || x.hostname.toLowerCase().endsWith('.local')) return ''; return x.origin.replace(/\/+$/, ''); } catch (_) { return ''; } };
 
   // ─── USER MENU (command only, no buttons) ───────────────
   async function showStart(chatId, name, from) {
-    const base = ensureHttps(process.env.PUBLIC_URL || process.env.WEB_URL || 'https://botvippro-production-0b00.up.railway.app');
+    const base = ensureHttps(process.env.PUBLIC_URL || process.env.WEB_URL || '');
     const admin = isAdmin(from && from.id);
     let text = '';
     text += '╔══════════════════════════╗\n';
@@ -1055,19 +1055,41 @@ function startTelegramBot(options) {
   }
 
   async function showUserMenu(chatId) {
-    await send(chatId,
-      '🎮 <b>TOOLTUNGTUNG · KEY CENTER</b>\n' +
-      '━━━━━━━━━━━━━━━━━━━━\n' +
-      '🎁 /getkeyv1 — làm nhiệm vụ nhận key 15 phút\n' +
-      '💎 /muakeytx — xem giá và mua key\n' +
-      '🔑 /mykey — kiểm tra key hiện tại\n' +
-      '━━━━━━━━━━━━━━━━━━━━\n' +
-      'Hỗ trợ: @SunNetWin',
-      { reply_markup: { inline_keyboard: [
-        [{ text: '💎 Mua key', callback_data: 'buy_menu' }, { text: '🎁 Key free', callback_data: 'cmd:getkey' }],
-        [{ text: '🔑 Key của tôi', callback_data: 'cmd:menu' }]
-      ] } }
-    );
+    // Khung gọn gàng, mỗi lệnh 1 block riêng, có icon (giống mẫu)
+    const text =
+`╔══════════════════════════╗
+║  ⚡ <b>ToolTungTung · HELP</b>  ║
+╚══════════════════════════╝
+
+🔑 <b>Lệnh /getkeyv1</b>
+└ Làm nhiệm vụ quảng cáo → nhận key 15 phút (1 lần/ngày)
+
+🔗 <b>Lệnh /getkeyv2</b>
+└ Tạo link Link4M → vượt → trang hiện key (tối đa 2 lần/ngày)
+
+🔐 <b>Lệnh /nhapkey KEY</b>
+└ Dán key vừa nhận → bot xác nhận → mở Index tự điền key
+
+💎 <b>Lệnh /muakeytx</b>
+└ Xem bảng giá & mua key dài hạn
+
+🔑 <b>Lệnh /mykey</b>
+└ Kiểm tra key hiện tại của bạn
+
+📱 <b>Lệnh /infotiktok {username}</b>
+└ Xem thông tin kênh TikTok (cooldown 30s)
+
+🎬 <b>Lệnh /videotiktok {link}</b>
+└ Xem thông tin video TikTok (cooldown 30s)
+
+━━━━━━━━━━━━━━━━━━━━
+Hỗ trợ: <b>@SunNetWin</b>`;
+    await send(chatId, text, {
+      reply_markup: { inline_keyboard: [
+        [{ text: '💎 Mua key', callback_data: 'buy_menu' }, { text: '🔗 Getkey V2', callback_data: 'cmd:getkeyv2' }],
+        [{ text: '🎁 Key free V1', callback_data: 'cmd:getkey' }, { text: '🔑 Key của tôi', callback_data: 'cmd:mykey' }]
+      ] }
+    });
   }
 
   async function sendHelpAdmin(chatId, page) {
@@ -1387,7 +1409,7 @@ Bấm nút duyệt / từ chối:`;
       trialUses[String(userId)] = { day: trialDay, keyId: issued.record.id, issuedAt: Date.now(), expiresAt: issued.record.expiresAt };
       saveJSON(TRIAL_FILE, trialUses);
       delete sessions[userId]; options.saveSessions(sessions);
-      const appUrl = ensureHttps(process.env.PUBLIC_URL || process.env.WEB_URL || 'https://botvippro-production-0b00.up.railway.app') + '/';
+      const appUrl = ensureHttps(process.env.PUBLIC_URL || process.env.WEB_URL || '') + '/';
       await send(message.chat.id,
         '✅ <b>NHIỆM VỤ HOÀN THÀNH · KEY TRIAL 15 PHÚT</b>\n' +
         '━━━━━━━━━━━━━━━━━━━━\n' +
@@ -1444,6 +1466,273 @@ ${promo ? `📌 <b>Câu cần sao chép:</b>\n<code>${esc(promo)}</code>\n` : ''
 ⌛️ Bạn có <b>${timeoutSec} giây</b> để gửi ảnh.
 🎁 Key dùng thử: <b>15 phút · 1 Telegram ID/ngày</b>`);
   }
+
+  // ===== /getkeyv2 — tạo link rút gọn Link4M, giới hạn 2 lần/ngày, Index Key 30 phút =====
+  /** Gọi API Link4M rút gọn: GET https://link4m.co/api-shorten/v2?api=TOKEN&url=DEST */
+  async function createLink4mShortUrl(destinationUrl, apiToken, configuredBaseUrl) {
+    const token = String(apiToken || '').trim();
+    if (!token) throw new Error('Chưa cấu hình Link4M API token');
+    const dest = String(destinationUrl || '').trim();
+    if (!dest || !/^https:\/\//i.test(dest)) throw new Error('URL đích phải là HTTPS hợp lệ');
+    // Chỉ gửi token tới host Link4M đã được cho phép; không cho settings biến thành SSRF.
+    let apiBase = String(configuredBaseUrl || 'https://link4m.co/api-shorten/v2').trim();
+    if (!apiBase) apiBase = 'https://link4m.co/api-shorten/v2';
+    if (!/^https:\/\//i.test(apiBase)) apiBase = 'https://' + apiBase.replace(/^\/+/, '');
+    let parsed;
+    try { parsed = new URL(apiBase); } catch (_) { throw new Error('Link4M API URL không hợp lệ'); }
+    const host = parsed.hostname.toLowerCase();
+    if (!['link4m.co', 'www.link4m.co', 'link4m.com', 'www.link4m.com'].includes(host)) {
+      throw new Error('Link4M API URL chỉ được dùng host link4m.co hoặc link4m.com');
+    }
+    if (!parsed.pathname || parsed.pathname === '/') parsed.pathname = '/api-shorten/v2';
+    const apiUrl = new URL(parsed.toString());
+    apiUrl.searchParams.set('api', token);
+    apiUrl.searchParams.set('url', dest);
+    const r = await fetch(apiUrl.toString(), {
+      method: 'GET',
+      headers: { accept: 'application/json', 'user-agent': 'ToolTungTung/1.0' },
+      signal: AbortSignal.timeout(15000)
+    });
+    const bodyText = await r.text();
+    let data = null;
+    try { data = JSON.parse(bodyText); } catch (_) {}
+    if (!r.ok) throw new Error((data && (data.message || data.error)) || ('Link4M HTTP ' + r.status));
+    if (!data || String(data.status).toLowerCase() !== 'success' || !data.shortenedUrl) {
+      throw new Error((data && (data.message || data.error)) || 'Link4M không trả shortenedUrl');
+    }
+    let shortUrl;
+    try { shortUrl = new URL(String(data.shortenedUrl).trim()); } catch (_) { throw new Error('Link4M trả về URL rút gọn không hợp lệ'); }
+    if (!['http:', 'https:'].includes(shortUrl.protocol)) throw new Error('Link4M trả về URL không an toàn');
+    return shortUrl.toString();
+  }
+
+  async function startGetkeyV2(chatId, fromId, from) {
+    const cfg = options.getConfig() || {};
+    const maxPerDay = Number(cfg.getkeyv2MaxPerDay) || 2;
+    const linkTtlMin = Number(cfg.getkeyv2LinkMinutes) || 5;
+    const keyTtlMin = Number(cfg.indexKeyMinutes) || 30;
+    const day = bangkokDayKey();
+    const uid = String(fromId);
+    let rec = getkeyv2Uses[uid];
+    if (!rec || rec.day !== day) {
+      rec = { day, count: 0 };
+      getkeyv2Uses[uid] = rec;
+    }
+    if (rec.count >= maxPerDay) {
+      return send(chatId, `⛔ Hôm nay bạn đã vượt đủ <b>${maxPerDay} lần</b>, quay lại ngày mai.\n\n💎 Mua key lâu dài: /muakeytx`);
+    }
+    // Cancel the previous pending link completely (including its code index).
+    const previousPending = pendingLink4m[uid];
+    if (previousPending) {
+      try { clearTimeout(previousPending.timer); } catch (e) {}
+      if (previousPending.trackCode) delete pendingLink4mByCode[previousPending.trackCode];
+      delete pendingLink4m[uid];
+    }
+
+    const trackCode = crypto.randomBytes(6).toString('hex');
+    // Link đích = API server. Link4M chỉ redirect về đây SAU KHI user vượt xong → biết chắc đã vượt.
+    const publicBase = ensureHttps(process.env.PUBLIC_URL || process.env.WEB_URL || cfg.publicUrl || '').replace(/\/+$/, '');
+    if (!publicBase) {
+      return send(chatId, '⚠️ Chưa set <code>PUBLIC_URL</code> — không tạo được link xác nhận vượt. Báo admin.');
+    }
+    const destUrl = publicBase + '/api/link4m/pass?c=' + encodeURIComponent(trackCode) + '&u=' + encodeURIComponent(uid);
+
+    const apiToken = String(cfg.link4mApiToken || process.env.LINK4M_API_TOKEN || '').trim();
+    let shortLink = '';
+    try {
+      if (!apiToken) {
+        return send(chatId, '⚠️ Admin chưa cấu hình <b>Link4M API token</b>.\nVào Admin → Hệ thống → dán token Link4M, hoặc set env <code>LINK4M_API_TOKEN</code>.');
+      }
+      await send(chatId, '⏳ Đang tạo link vượt Link4M...');
+      shortLink = await createLink4mShortUrl(destUrl, apiToken, cfg.link4mBaseUrl);
+    } catch (e) {
+      return send(chatId, '❌ Không tạo được link Link4M: ' + esc(e.message || 'lỗi') + '\nThử lại sau hoặc liên hệ admin.');
+    }
+
+    const expiresAt = Date.now() + linkTtlMin * 60 * 1000;
+    const sessions = options.getSessions();
+    sessions[uid] = { type: 'getkeyv2', startedAt: Date.now(), trackCode, shortLink, expiresAt, verified: false };
+    options.saveSessions(sessions);
+
+    const timer = setTimeout(async () => {
+      try {
+        const current = pendingLink4m[uid];
+        if (current && current.trackCode === trackCode) {
+          const hadVerified = !!(current.verified || current.keySent || current.plainKey);
+          delete pendingLink4m[uid];
+          delete pendingLink4mByCode[trackCode];
+          const s = options.getSessions();
+          if (s[uid] && s[uid].type === 'getkeyv2' && s[uid].trackCode === trackCode) {
+            delete s[uid];
+            options.saveSessions(s);
+          }
+          if (!hadVerified) await send(chatId, `⏰ Link đã hết hạn sau ${linkTtlMin} phút. Gõ /getkeyv2 để tạo link mới.`).catch(() => null);
+        }
+      } catch (e) {}
+    }, linkTtlMin * 60 * 1000);
+    if (typeof timer.unref === 'function') timer.unref();
+
+    const pending = {
+      trackCode, shortLink, expiresAt, chatId, timer, fromId: uid,
+      verified: false, verifiedAt: null, keySent: false
+    };
+    pendingLink4m[uid] = pending;
+    pendingLink4mByCode[trackCode] = pending;
+    // Cho HTTP callback gọi phát key
+    completeGetkeyV2Hook = completeGetkeyV2;
+
+    await send(chatId,
+`🔗 <b>GET KEY V2 · Link4M</b>
+━━━━━━━━━━━━━━━━━━━━
+📌 Link vượt (hiệu lực <b>${linkTtlMin} phút</b>):
+${esc(shortLink)}
+
+✅ Mở link và <b>vượt hết quảng cáo</b>.
+Hệ thống <b>tự biết</b> khi bạn vượt xong (mở trang xác nhận) và gửi key tại đây.
+
+Nếu đã vượt mà chưa thấy key: gõ <code>done</code>.
+⏳ Còn <b>${linkTtlMin} phút</b> · Key sống <b>${keyTtlMin} phút</b>
+━━━━━━━━━━━━━━━━━━━━
+@SunNetWin`);
+  }
+
+  async function completeGetkeyV2(chatId, fromId, opts = {}) {
+    const uid = String(fromId);
+    const sessions = options.getSessions();
+    const sess = sessions[uid];
+    if (!sess || sess.type !== 'getkeyv2') {
+      return send(chatId, '⚠️ Không có phiên getkeyv2 đang mở. Gõ /getkeyv2 trước.');
+    }
+    if (sess.expiresAt && sess.expiresAt < Date.now()) {
+      delete sessions[uid];
+      options.saveSessions(sessions);
+      if (pendingLink4m[uid]) {
+        try { clearTimeout(pendingLink4m[uid].timer); } catch(e){}
+        try { delete pendingLink4mByCode[pendingLink4m[uid].trackCode]; } catch(e){}
+        delete pendingLink4m[uid];
+      }
+      return send(chatId, '⏰ Link đã hết hạn. Gõ /getkeyv2 để tạo mới.');
+    }
+    // Bắt buộc đã vượt: callback /api/link4m/pass đánh dấu verified
+    const pending = pendingLink4m[uid];
+    const verified = !!(sess.verified || (pending && pending.verified) || opts.forceVerified);
+    if (!verified) {
+      return send(chatId, '❌ <b>Chưa phát hiện vượt link</b>.\nMở đúng link bot gửi → vượt hết quảng cáo đến trang xác nhận.\nSau đó key sẽ được gửi tự động (hoặc gõ lại <code>done</code>).');
+    }
+    if (pending && pending.keySent) {
+      return send(chatId, '✅ Key đã gửi rồi. Kéo lên tin nhắn trước đó để lấy key.');
+    }
+    const cfg = options.getConfig() || {};
+    const maxPerDay = Number(cfg.getkeyv2MaxPerDay) || 2;
+    const keyTtlMin = Number(cfg.indexKeyMinutes) || 30;
+    const day = bangkokDayKey();
+    let rec = getkeyv2Uses[uid];
+    if (!rec || rec.day !== day) {
+      rec = { day, count: 0 };
+      getkeyv2Uses[uid] = rec;
+    }
+    if (rec.count >= maxPerDay) {
+      return send(chatId, `⛔ Hôm nay bạn đã vượt đủ ${maxPerDay} lần.`);
+    }
+
+    // ===== Tạo key THẬT trước (để chắc chắn login được) =====
+    let plainKey = null;
+    let indexKey = genIndexKey();
+    try {
+      if (typeof options.createKey === 'function') {
+        const issued = options.createKey({
+          label: `Index Key · ${keyTtlMin}p · TG ${uid}`,
+          durationHours: Math.max(0.25, keyTtlMin / 60),
+          deviceLimit: 1,
+          source: 'getkeyv2',
+          telegramId: uid
+        });
+        plainKey = issued && issued.plainKey;
+      }
+    } catch (e) {
+      logLine && logLine('getkeyv2 createKey fail: ' + (e.message || e));
+    }
+    // Nếu createKey lỗi → dùng Index Key dạng plain luôn
+    if (!plainKey) {
+      plainKey = indexKey;
+      try {
+        if (typeof options.createKey === 'function') {
+          const issued2 = options.createKey({
+            key: plainKey,
+            label: `Index Key · ${keyTtlMin}p · TG ${uid}`,
+            durationHours: Math.max(0.25, keyTtlMin / 60),
+            deviceLimit: 1,
+            source: 'getkeyv2-idx',
+            telegramId: uid
+          });
+          plainKey = (issued2 && issued2.plainKey) || plainKey;
+        }
+      } catch (e2) { /* keep plainKey = indexKey */ }
+    }
+
+    // Đăng ký Index Key map (auth cũng nhận IDX-...)
+    const expiresAt = Date.now() + keyTtlMin * 60 * 1000;
+    indexKeys[indexKey] = {
+      telegramId: uid,
+      createdAt: Date.now(),
+      expiresAt,
+      used: false,
+      deviceHash: null,
+      plainKey: plainKey
+    };
+    // Nếu plainKey khác IDX, cũng map để auth nhận
+    if (plainKey && plainKey !== indexKey) {
+      indexKeys[String(plainKey).toUpperCase()] = {
+        telegramId: uid, createdAt: Date.now(), expiresAt, used: false, deviceHash: null, plainKey
+      };
+    }
+    saveIndexKeys();
+
+    rec.count += 1;
+    saveGetkeyv2Uses();
+
+    // cleanup session + đánh dấu đã gửi key
+    if (pendingLink4m[uid]) {
+      pendingLink4m[uid].keySent = true;
+      try { clearTimeout(pendingLink4m[uid].timer); } catch (e) {}
+      try { delete pendingLink4mByCode[pendingLink4m[uid].trackCode]; } catch (e) {}
+      delete pendingLink4m[uid];
+    }
+    delete sessions[uid];
+    options.saveSessions(sessions);
+
+    const appUrl = ensureHttps(process.env.PUBLIC_URL || process.env.WEB_URL || '').replace(/\/+$/, '') + '/';
+    // Nút copy_text (Telegram hỗ trợ) + mở Index
+    const keyboard = {
+      inline_keyboard: [
+        [{ text: '📋 Sao chép Key', copy_text: { text: String(plainKey) } }],
+        [{ text: '🎮 Mở Index dán Key', web_app: { url: appUrl } }]
+      ]
+    };
+    await send(chatId,
+`🎉 <b>VƯỢT THÀNH CÔNG</b>
+━━━━━━━━━━━━━━━━━━━━
+🔑 <b>KEY DÙNG CHO INDEX</b>
+
+<code>${esc(plainKey)}</code>
+
+⏱ Hết hạn: <b>${keyTtlMin} phút</b> · 1 thiết bị
+
+📋 <b>Cách vào Index:</b>
+1. Bấm <b>📋 Sao chép Key</b> (hoặc giữ dòng key ở trên)
+2. Bấm <b>🎮 Mở Index dán Key</b>
+3. Dán vào ô <b>DÁN KEY VÀO ĐÂY</b> → <b>UNLOCK</b>
+
+━━━━━━━━━━━━━━━━━━━━
+Lượt còn lại hôm nay: <b>${Math.max(0, maxPerDay - rec.count)}</b>/${maxPerDay}
+@SunNetWin`,
+      { reply_markup: keyboard }
+    );
+    // Tin phụ: chỉ key thuần — dễ copy trên mọi máy
+    await send(chatId, '<code>' + esc(plainKey) + '</code>').catch(() => null);
+  }
+  // HTTP /api/link4m/pass gọi hook này để tự phát key sau khi user vượt
+  completeGetkeyV2Hook = completeGetkeyV2;
 
   function resolveKey(query) {
     const q = String(query || '').trim();
@@ -2505,25 +2794,17 @@ async function lookupInstagram(input) {
 
   async function showBuyMenu(chatId) {
     const available = plans();
-    if (!available.length) return send(chatId, '📭 Tạm hết gói.\n/getkeyv1 nhận free · @SunNetWin');
-    const lines = available.map((p, i) => {
-      const days = p.durationHours >= 24 ? (Math.round(p.durationHours / 24) + ' ngày') : (p.durationHours + 'h');
-      return '<b>' + (i + 1) + '. ' + esc(p.label) + '</b>\n    💰 ' + fmt(p.price) + 'đ  ·  ⏱ ' + days;
-    }).join('\n\n');
+    if (!available.length) return send(chatId, '📭 Tạm hết gói.\n/getkeyv1 hoặc /getkeyv2 nhận free · @SunNetWin');
+    // UI mới: chỉ 1 dòng chào + "Đây là bảng giá key bên tui" + inline buttons, không thêm giải thích
     const keyboard = {
       inline_keyboard: available.map(p => {
-        const days = p.durationHours >= 24 ? (Math.round(p.durationHours / 24) + ' ngày') : (p.durationHours + 'h');
-        return [{ text: p.label + ' · ' + fmt(p.price) + 'đ · ' + days, callback_data: 'pay:' + p.id }];
+        const days = p.durationHours >= 24 ? (Math.round(p.durationHours / 24) + ' Ngày') : (p.durationHours + 'h');
+        return [{ text: `${fmt(p.price)}đ - ${days}`, callback_data: 'pay:' + p.id }];
       })
     };
     await send(chatId,
-      '💳 <b>MUA KEY VIP</b>\n' + 
-      '────────────────────\n' + 
-      'Chọn gói 👇\n' + 
-      '\n' + lines + '\n\n' +
-      '────────────────────\n' + 
-      '✅ Kích hoạt tự động · key lưu trên thiết bị\n' + 
-      '⚡ Hỗ trợ mua key · @SunNetWin\n',
+      '👋 Xin chào!\n' +
+      '<b>Đây là bảng giá key bên tui</b>',
       { reply_markup: keyboard }
     );
   }
@@ -2598,6 +2879,12 @@ async function lookupInstagram(input) {
     }
     if (data === 'buy_menu') return showBuyMenu(chatId);
     if (data === 'cmd:getkey') return startGroupKeyTask(chatId, fromId, cq.from);
+    if (data === 'cmd:getkeyv2') return startGetkeyV2(chatId, fromId, cq.from);
+    if (data === 'cmd:mykey') {
+      // fall through to mykey logic via fake message if needed
+      return send(chatId, 'Gõ /mykey để xem key của bạn.');
+    }
+    if (data === 'noop') return; // copy hint button
     if (data === 'cmd:resetkey') {
       const sessions = options.getSessions();
       sessions[fromId] = { type: 'await_reset_key', startedAt: Date.now() };
@@ -2787,6 +3074,10 @@ async function lookupInstagram(input) {
     }
   }
 
+  // ===== Anti-spam: ≥5 commands in 10s → lock 30s =====
+  const userCmdLog = new Map(); // fromId -> timestamps[]
+  const userCmdLock = new Map(); // fromId -> unlockAt
+
   async function handleMessage(message) {
     if (!message || !message.chat) return;
     const from = message.from || {};
@@ -2794,6 +3085,31 @@ async function lookupInstagram(input) {
     const chatId = message.chat.id;
     const fromId = String(from.id);
     const sessions = options.getSessions();
+
+    // Spam lock check
+    const lockUntil = userCmdLock.get(fromId) || 0;
+    if (Date.now() < lockUntil) {
+      const left = Math.ceil((lockUntil - Date.now()) / 1000);
+      return send(chatId, `🚫 Bạn đang bị tạm khoá lệnh do spam. Còn <b>${left}s</b>.`);
+    }
+    // Anti-spam lấy ngưỡng từ Admin → Hệ thống, mặc định 5 lệnh / 10 giây / khóa 30 giây.
+    if (text.startsWith('/')) {
+      const now = Date.now();
+      const spamCfg = (options.getConfig && options.getConfig()) || {};
+      const limit = Math.max(3, Math.min(20, Number(spamCfg.spamCmdLimit) || 5));
+      const windowMs = Math.max(5000, Math.min(60000, (Number(spamCfg.spamWindowSec) || 10) * 1000));
+      const lockMs = Math.max(10000, Math.min(300000, (Number(spamCfg.spamLockSec) || 30) * 1000));
+      let arr = userCmdLog.get(fromId) || [];
+      arr = arr.filter(t => typeof t === 'number' && now - t < windowMs);
+      arr.push(now);
+      userCmdLog.set(fromId, arr);
+      if (arr.length >= limit) {
+        userCmdLock.set(fromId, now + lockMs);
+        userCmdLog.set(fromId, []);
+        return send(chatId, `🚫 Bạn gửi quá nhiều lệnh trong thời gian ngắn. Tạm khóa <b>${Math.ceil(lockMs / 1000)} giây</b>.`);
+      }
+    }
+
     try {
       touchUserProfile(fromId, {
         name: displayName(from),
@@ -2810,7 +3126,8 @@ async function lookupInstagram(input) {
       const session = sessions[fromId];
       if (session?.type === 'group') return createProofRequest(message, 'group');
       if (session?.type === 'payment') return createProofRequest(message, 'payment');
-      return send(chatId, '⚠️ Gõ /getkeyv1 hoặc /muakeytx trước.');
+      if (session?.type === 'getkeyv2') return completeGetkeyV2(chatId, fromId);
+      return send(chatId, '⚠️ Gõ /getkeyv1 hoặc /getkeyv2 hoặc /muakeytx trước.');
     }
 
     if (!text) return;
@@ -2828,9 +3145,16 @@ async function lookupInstagram(input) {
     const argText = text.replace(/^\/\S+\s*/, '').trim();
 
     // Bot chỉ là Key Center; mọi cấu hình/quản trị nằm trong Index Admin.
-    const keyCenterCommands = new Set(['start','menu','help','getkeyv1','getkey','muakeytx','buy','pay','mykey','my_key','cancel','support','hotro']);
-    if (!keyCenterCommands.has(cmd)) {
-      return send(chatId, '🔑 <b>TOOLTUNGTUNG · KEY CENTER</b>\nChức năng bot hiện chỉ gồm nhận key, mua key và kiểm tra key.\n\n🎁 /getkeyv1 · 💎 /muakeytx · 🔑 /mykey\nHỗ trợ: @SunNetWin');
+    // Also allow TikTok lookup + getkeyv2 + done
+    const keyCenterCommands = new Set(['start','menu','help','getkeyv1','getkey','getkeyv2','nhapkey','activate','muakeytx','buy','pay','mykey','my_key','cancel','support','hotro','infotiktok','videotiktok','done']);
+    if (!keyCenterCommands.has(cmd) && !['done','xong','hoanthanh'].includes(text.toLowerCase().trim())) {
+      return send(chatId, '🔑 <b>TOOLTUNGTUNG · KEY CENTER</b>\n\n🎁 /getkeyv1 · 🔗 /getkeyv2 · 🔐 /nhapkey · 💎 /muakeytx · 🔑 /mykey\n📱 /infotiktok · /videotiktok\nHỗ trợ: @SunNetWin');
+    }
+
+    // Complete getkeyv2 by text "done"
+    if (['done','xong','hoanthanh'].includes(text.toLowerCase().trim()) || cmd === 'done') {
+      const sess = sessions[fromId];
+      if (sess?.type === 'getkeyv2') return completeGetkeyV2(chatId, fromId);
     }
 
     // Bảo trì / khóa lệnh
@@ -2863,6 +3187,151 @@ async function lookupInstagram(input) {
 
     if (cmd === 'getkeyv1') {
       return startGroupKeyTask(chatId, fromId, from);
+    }
+
+    // ===== /getkeyv2 — Link4M + Index Key (max 2/day) =====
+    if (cmd === 'getkeyv2') {
+      return startGetkeyV2(chatId, fromId, from);
+    }
+
+    // ===== /nhapkey KEY — xác nhận key sau vượt, mở Mini App tự điền =====
+    if (cmd === 'nhapkey' || cmd === 'activate') {
+      const plain = (argText || args.join(' ') || '').trim();
+      if (!plain) {
+        return send(chatId, '🔐 <b>NHẬP KEY</b>\nCú pháp: <code>/nhapkey KEY_CỦA_BẠN</code>\n\nLấy key sau khi vượt link /getkeyv2 (trang web hiện key + nút sao chép).');
+      }
+      let record = null;
+      try {
+        if (typeof options.findKey === 'function') record = options.findKey(plain);
+      } catch (e) {}
+      if (!record) {
+        return send(chatId, '❌ Key không hợp lệ hoặc đã hết hạn.\nCopy nguyên key từ trang nhận key rồi thử lại.');
+      }
+      if (record.revoked || record.status === 'revoked') return send(chatId, '❌ Key đã bị thu hồi.');
+      if (record.expiresAt && record.expiresAt < Date.now()) {
+        return send(chatId, '❌ Key đã hết hạn. Gõ /getkeyv2 để vượt lại hoặc /muakeytx.');
+      }
+      if (record.telegramId && String(record.telegramId) !== String(fromId)) {
+        return send(chatId, '⛔ Key này đã được liên kết với Telegram ID khác. Liên hệ @SunNetWin nếu bạn là chủ sở hữu.');
+      }
+      try {
+        if (typeof options.patchKey === 'function') {
+          options.patchKey(record.id, { telegramId: String(fromId) });
+        } else if (record.telegramId == null) {
+          record.telegramId = fromId;
+          if (typeof options.saveKeys === 'function') options.saveKeys();
+        }
+      } catch (e) {}
+      const appBase = ensureHttps(process.env.PUBLIC_URL || process.env.WEB_URL || '').replace(/\/+$/, '');
+      if (!appBase) {
+        return send(chatId, '✅ Key hợp lệ nhưng chưa set <code>PUBLIC_URL</code> — hãy mở Index và dán key thủ công:\n<code>' + esc(plain) + '</code>');
+      }
+      const appUrl = appBase + '/?key=' + encodeURIComponent(plain);
+      const left = record.expiresAt ? Math.max(1, Math.round((record.expiresAt - Date.now()) / 60000)) : null;
+      return send(chatId,
+`✅ <b>KEY HỢP LỆ — ĐÃ LƯU</b>
+━━━━━━━━━━━━━━━━━━━━
+🔑 <code>${esc(plain)}</code>
+${left != null ? '⏱ Còn khoảng <b>' + left + ' phút</b>\n' : ''}
+📱 Bấm nút bên dưới → Index <b>tự điền key</b> và UNLOCK.
+
+Hoặc mở Index → dán key → UNLOCK.
+━━━━━━━━━━━━━━━━━━━━
+@SunNetWin`,
+        { reply_markup: { inline_keyboard: [
+          [{ text: '🎮 Mở Index (tự điền key)', web_app: { url: appUrl } }],
+          [{ text: '📋 Sao chép Key', copy_text: { text: plain } }]
+        ] } }
+      );
+    }
+
+    // ===== TikTok commands (cooldown 30s) =====
+    if (cmd === 'infotiktok' || cmd === 'infotik' || cmd === 'checktt') {
+      const input = argText || args.join(' ');
+      if (!input) return send(chatId, '📌 Dùng: <code>/infotiktok username</code>\nVD: <code>/infotiktok ngth.2010</code>');
+      // simple per-user cooldown
+      const cdKey = 'tt_' + fromId;
+      const last = userCmdLog.get(cdKey) || 0;
+      if (Date.now() - last < 30000) {
+        const left = Math.ceil((30000 - (Date.now() - last)) / 1000);
+        return send(chatId, `⏳ Cooldown còn <b>${left}s</b>.`);
+      }
+      userCmdLog.set(cdKey, Date.now());
+      try {
+        await send(chatId, '🔍 Đang lấy thông tin TikTok...');
+        const info = await lookupTikTok(input);
+        const lines = [
+          '📱 <b>THÔNG TIN TIKTOK</b>',
+          '━━━━━━━━━━━━━━━━━━━━',
+          `👤 <b>${esc(info.nickname || info.username)}</b>`,
+          `🔗 @${esc(info.username)}`,
+          info.verified ? '✅ Đã xác minh' : '',
+          info.private ? '🔒 Tài khoản riêng tư' : '',
+          info.bio ? `📝 ${esc(String(info.bio).slice(0, 150))}` : '',
+          `👥 Followers: <b>${info.followers != null ? fmt(info.followers) : '—'}</b>`,
+          `➡️ Following: <b>${info.following != null ? fmt(info.following) : '—'}</b>`,
+          `❤️ Likes: <b>${info.likes != null ? fmt(info.likes) : '—'}</b>`,
+          `🎬 Videos: <b>${info.videos != null ? fmt(info.videos) : '—'}</b>`,
+          info.createTime ? `📅 Tạo: ${new Date(info.createTime).toLocaleDateString('vi-VN')}` : '',
+          `🌐 ${esc(info.profileUrl || '')}`
+        ].filter(Boolean).join('\n');
+        if (info.avatar) {
+          try {
+            await sendPhoto(chatId, info.avatar, { caption: lines });
+          } catch {
+            await send(chatId, lines);
+          }
+        } else {
+          await send(chatId, lines);
+        }
+      } catch (e) {
+        await send(chatId, '❌ Không lấy được: ' + esc(e.message || 'lỗi'));
+      }
+      return;
+    }
+
+    if (cmd === 'videotiktok' || cmd === 'videotik') {
+      const input = argText || args.join(' ');
+      if (!input || !/tiktok\.com/i.test(input)) {
+        return send(chatId, '📌 Dùng: <code>/videotiktok {link video}</code>\nVD: /videotiktok https://www.tiktok.com/@user/video/123...');
+      }
+      const cdKey = 'ttv_' + fromId;
+      const last = userCmdLog.get(cdKey) || 0;
+      if (Date.now() - last < 30000) {
+        const left = Math.ceil((30000 - (Date.now() - last)) / 1000);
+        return send(chatId, `⏳ Cooldown còn <b>${left}s</b>.`);
+      }
+      userCmdLog.set(cdKey, Date.now());
+      try {
+        await send(chatId, '🔍 Đang lấy thông tin video...');
+        // Reuse lookupTikTok oEmbed path for video
+        const headers = {
+          'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15',
+          'accept-language': 'vi-VN,vi;q=0.9'
+        };
+        const oembedUrl = `https://www.tiktok.com/oembed?url=${encodeURIComponent(input)}`;
+        const r = await fetch(oembedUrl, { signal: AbortSignal.timeout(10000), headers });
+        if (!r.ok) throw new Error('Không lấy được oEmbed');
+        const d = await r.json();
+        const lines = [
+          '🎬 <b>THÔNG TIN VIDEO TIKTOK</b>',
+          '━━━━━━━━━━━━━━━━━━━━',
+          `📌 ${esc((d.title || '').slice(0, 200))}`,
+          `👤 Author: <b>${esc(d.author_name || '—')}</b>`,
+          d.author_url ? `🔗 ${esc(d.author_url)}` : '',
+          d.provider_name ? `🌐 ${esc(d.provider_name)}` : '',
+          `🔗 ${esc(input)}`
+        ].filter(Boolean).join('\n');
+        if (d.thumbnail_url) {
+          try { await sendPhoto(chatId, d.thumbnail_url, { caption: lines }); }
+          catch { await send(chatId, lines); }
+        } else {
+          await send(chatId, lines);
+        }
+      } catch (e) {
+        await send(chatId, '❌ Không lấy được video: ' + esc(e.message || 'lỗi'));
+      }
+      return;
     }
 
     if (cmd === 'muakeytx') {
@@ -3119,10 +3588,11 @@ const PORT = process.env.PORT || 3000;
 const DATA_DIR = path.join(__dirname, 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
-const SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex');
+const SECRET = String(process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex'));
+if (!process.env.JWT_SECRET) console.warn('[security] JWT_SECRET chưa đặt; token sẽ mất hiệu lực khi process khởi động lại. Hãy cấu hình JWT_SECRET cố định trên Railway.');
 const ADMIN_PASSWORDS = [...new Set([process.env.ADMIN_PASSWORD, process.env.ADMIN_SECRET].map(v => String(v || '').trim()).filter(Boolean))];
-if (!ADMIN_PASSWORDS.length) ADMIN_PASSWORDS.push('htungdzvipmax');
-const ADMIN_PASSWORD = ADMIN_PASSWORDS[0];
+const ADMIN_PASSWORD = ADMIN_PASSWORDS[0] || '';
+if (!ADMIN_PASSWORDS.length) console.warn('[security] Chưa đặt ADMIN_PASSWORD (hoặc ADMIN_SECRET); đăng nhập Admin sẽ bị vô hiệu cho đến khi cấu hình biến môi trường.');
 const TOKEN_TTL_MS = 12 * 60 * 60 * 1000; // admin session
 const USER_TOKEN_TTL_MS = 10 * 365 * 24 * 60 * 60 * 1000; // user session bounded by key expiry
 const POLL_MS = Math.max(5000, Number(process.env.POLL_MS || 8000));
@@ -3140,14 +3610,24 @@ const PUBLIC_DIR = (function () {
 const INDEX_HTML = path.join(PUBLIC_DIR, 'index.html');
 console.log('[static] PUBLIC_DIR=', PUBLIC_DIR, 'index=', fs.existsSync(INDEX_HTML));
 
-app.use(express.static(PUBLIC_DIR));
+app.use(express.static(PUBLIC_DIR, {
+  maxAge: 0,
+  etag: true,
+  setHeaders(res, filePath) {
+    if (/\.(html|js|css)$/i.test(filePath)) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    }
+  }
+}));
 app.get('/', (req, res) => {
   if (fs.existsSync(INDEX_HTML)) return res.sendFile(INDEX_HTML);
   res.status(500).type('text').send('index.html missing. Put file at public/index.html OR ./index.html in repo root.');
 });
 app.get('/health', (req, res) => res.json({ ok: true, t: Date.now(), index: fs.existsSync(INDEX_HTML) }));
-app.get('/admin', (req, res) => { const f = path.join(PUBLIC_DIR, 'admin.html'); if (fs.existsSync(f)) return res.sendFile(f); return res.redirect('/admin.html'); });
-app.get('/admin.html', (req, res, next) => { const f = path.join(PUBLIC_DIR, 'admin.html'); if (fs.existsSync(f)) return res.sendFile(f); return next(); });
+app.get('/admin', (req, res) => { const f = path.join(PUBLIC_DIR, 'admin.html'); if (fs.existsSync(f)) { res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate'); return res.sendFile(f); } return res.redirect('/admin.html'); });
+app.get('/admin.html', (req, res, next) => { const f = path.join(PUBLIC_DIR, 'admin.html'); if (fs.existsSync(f)) { res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate'); return res.sendFile(f); } return next(); });
 
 const KEYS_FILE = path.join(DATA_DIR, 'keys.json');
 const STATE_FILE = path.join(DATA_DIR, 'state.json');
@@ -3157,6 +3637,8 @@ const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
 const REQUESTS_FILE = path.join(DATA_DIR, 'bot_requests.json');
 const USERS_FILE = path.join(DATA_DIR, 'user_profiles.json');
 const BOT_SESSIONS_FILE = path.join(DATA_DIR, 'telegram_sessions.json');
+const GETKEYV2_FILE = path.join(DATA_DIR, 'getkeyv2_uses.json');
+const INDEX_KEYS_FILE = path.join(DATA_DIR, 'index_keys.json');
 
 function loadJSON(file, fallback) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; }
@@ -3166,6 +3648,32 @@ function saveJSON(file, value) {
   fs.writeFileSync(tmp, JSON.stringify(value, null, 2));
   fs.renameSync(tmp, file);
 }
+
+// ===== GETKEYV2 storage (khai báo sớm để bot dùng được) =====
+let getkeyv2Uses = loadJSON(GETKEYV2_FILE, {});
+if (!getkeyv2Uses || typeof getkeyv2Uses !== 'object') getkeyv2Uses = {};
+let indexKeys = loadJSON(INDEX_KEYS_FILE, {});
+if (!indexKeys || typeof indexKeys !== 'object') indexKeys = {};
+const pendingLink4m = {};       // by telegramId
+const pendingLink4mByCode = {}; // by trackCode — dùng khi user mở link vượt xong
+let completeGetkeyV2Hook = null; // bot gắn hàm phát key vào đây
+
+function bangkokDayKey(ts = Date.now()) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(ts));
+}
+function genIndexKey() {
+  return 'IDX-' + crypto.randomBytes(16).toString('hex').toUpperCase();
+}
+function saveGetkeyv2Uses() { try { saveJSON(GETKEYV2_FILE, getkeyv2Uses); } catch (e) {} }
+function saveIndexKeys() { try { saveJSON(INDEX_KEYS_FILE, indexKeys); } catch (e) {} }
+setInterval(() => {
+  const now = Date.now();
+  let changed = false;
+  for (const [k, v] of Object.entries(indexKeys)) {
+    if (!v || (v.expiresAt && v.expiresAt <= now)) { delete indexKeys[k]; changed = true; }
+  }
+  if (changed) saveIndexKeys();
+}, 120000);
 function logLine(message) {
   const line = `[${new Date().toISOString()}] ${message}\n`;
   try { fs.appendFileSync(LOG_FILE, line); } catch {}
@@ -3198,6 +3706,18 @@ keys = keys.map(k => ({
 function saveKeys() { saveJSON(KEYS_FILE, keys); }
 function findKey(plain) { const hash = sha256(String(plain || '').trim()); return keys.find(k => k.hash === hash) || null; }
 function isExpired(key, now = Date.now()) { return key.expiresAt !== null && key.expiresAt !== undefined && Number(key.expiresAt) <= now; }
+// Enforce key deviceLimit on first activation. Existing devices can reconnect; new devices need free slots.
+function bindKeyDevice(key, deviceHash) {
+  if (!key || !deviceHash) return { ok: false, error: 'Thiếu mã thiết bị. Hãy tải lại Index và thử lại.' };
+  if (!Array.isArray(key.deviceHashes)) key.deviceHashes = [];
+  const hash = String(deviceHash);
+  if (key.deviceHashes.includes(hash)) return { ok: true, alreadyBound: true };
+  const limit = Math.max(1, Math.min(100, Math.floor(Number(key.deviceLimit || 1))));
+  if (key.deviceHashes.length >= limit) return { ok: false, error: `Key đã dùng đủ ${limit} thiết bị. Liên hệ Admin để đặt lại thiết bị.` };
+  key.deviceHashes.push(hash);
+  key.boundAt = key.boundAt || Date.now();
+  return { ok: true, alreadyBound: false };
+}
 function publicKeyInfo(k) {
   const dc = (k.deviceHashes || []).length;
   return {
@@ -3643,46 +4163,81 @@ if (savedState?.feeds) {
 /** Sicbo: VỊ = đoán TỔNG 3 xúc xắc (3–18). Bão hiếm → ít/không đoán bão. TX vẫn là cửa chính. */
 function enhanceSicbo(feed, ensemble) {
   const hist = feed.history || [];
-  const rows = hist.filter(h => Number.isFinite(Number(h.sum))).slice(0, 80);
+  const rows = hist.filter(h => Number.isFinite(Number(h.sum))).slice(0, 120);
 
-  // 1) Cửa Tài / Xỉu trước (từ ensemble TX)
+  // 1) Cửa Tài / Xỉu từ ensemble
   const pr = String(ensemble.predictedResult || '').toUpperCase();
   const isTai = pr.includes('TÀI') || pr.includes('TAI') || (pr === 'T') || (pr.includes('T') && !pr.includes('X'));
   const sideLabel = isTai ? 'TÀI' : 'XỈU';
-  // Tài: tổng 11–18 · Xỉu: tổng 3–10
+  // Tài: >10 (11–18) · Xỉu: ≤10 (3–10)
   const lo = isTai ? 11 : 3;
   const hi = isTai ? 18 : 10;
+  const sideSums = [];
+  for (let s = lo; s <= hi; s++) sideSums.push(s);
 
-  // Trọng số tổng gần đây (phiên mới nặng hơn)
+  // Seed theo phiên để 2 phiên liên tiếp không ra cùng 1 bộ vị
+  const sessSeed = String(feed.openSession || feed.lastLive?.session || feed.history?.[0]?.session || Date.now());
+  let seed = 0;
+  for (let i = 0; i < sessSeed.length; i++) seed = (seed * 31 + sessSeed.charCodeAt(i)) >>> 0;
+  const rnd = () => {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 0x100000000;
+  };
+
+  // Trọng số: phiên mới nặng + phạt xuất lý thuyết xúc xắc (tổng gần 10–11 nhiều hơn)
+  const diceProb = { 3:1,4:3,5:6,6:10,7:15,8:21,9:25,10:27,11:27,12:25,13:21,14:15,15:10,16:6,17:3,18:1 };
   const weighted = {};
-  for (let s = 3; s <= 18; s++) weighted[s] = 0;
-  rows.slice(0, 40).forEach((r, i) => {
+  for (const s of sideSums) weighted[s] = (diceProb[s] || 1) * 0.15;
+
+  // Lịch sử gần: boost tổng xuất hiện, phạt tổng vừa ra (anti-repeat ngắn hạn)
+  const recentSums = rows.slice(0, 12).map(r => Math.round(Number(r.sum))).filter(s => s >= 3 && s <= 18);
+  rows.slice(0, 50).forEach((r, i) => {
     const sm = Math.round(Number(r.sum));
-    if (sm < 3 || sm > 18) return;
-    weighted[sm] += 1 + (40 - i) * 0.1;
+    if (sm < lo || sm > hi) return;
+    weighted[sm] = (weighted[sm] || 0) + (2.2 + (50 - i) * 0.12);
+  });
+  // Phạt nhẹ 3 tổng vừa mới ra để vị đổi theo phiên
+  recentSums.slice(0, 3).forEach((sm, i) => {
+    if (sm >= lo && sm <= hi) weighted[sm] = Math.max(0.01, (weighted[sm] || 0) * (0.35 - i * 0.08));
   });
 
-  // 2) Chỉ lấy tổng CÙNG PHÍA với Tài/Xỉu → top 3 vị
-  const rankedSide = [];
-  for (let s = lo; s <= hi; s++) {
-    rankedSide.push({ sum: s, w: weighted[s] || 0 });
-  }
-  rankedSide.sort((a, b) => b.w - a.w || (isTai ? b.sum - a.sum : a.sum - b.sum));
+  // Tránh lặp lại đúng bộ vị của lần dự đoán trước
+  const prevTop = (feed.lastEnsemble && feed.lastEnsemble.sicbo && Array.isArray(feed.lastEnsemble.sicbo.viTop3))
+    ? feed.lastEnsemble.sicbo.viTop3.map(Number) : [];
 
-  // Nếu phía đó chưa có data → fallback theo tần suất lý thuyết gần giữa khoảng
-  let viTop3 = rankedSide.filter(x => x.w > 0).slice(0, 3).map(x => x.sum);
-  if (viTop3.length < 3) {
-    const fill = rankedSide.map(x => x.sum).filter(s => !viTop3.includes(s));
-    while (viTop3.length < 3 && fill.length) viTop3.push(fill.shift());
+  // Chọn top 3 bằng weighted random (không chỉ sort cứng → đa dạng hơn)
+  const pool = sideSums.map(s => ({ sum: s, w: Math.max(0.01, weighted[s] || 0.01) }));
+  const pickOne = (arr) => {
+    const total = arr.reduce((a, b) => a + b.w, 0) || 1;
+    let r = rnd() * total;
+    for (const item of arr) {
+      r -= item.w;
+      if (r <= 0) return item.sum;
+    }
+    return arr[arr.length - 1].sum;
+  };
+  const viTop3 = [];
+  const poolCopy = pool.slice();
+  while (viTop3.length < 3 && poolCopy.length) {
+    const s = pickOne(poolCopy);
+    if (!viTop3.includes(s)) viTop3.push(s);
+    const idx = poolCopy.findIndex(x => x.sum === s);
+    if (idx >= 0) poolCopy.splice(idx, 1);
+  }
+  // Nếu trùng nguyên bộ với lần trước → xoay 1 vị
+  if (prevTop.length === 3 && viTop3.length === 3 &&
+      prevTop.slice().sort().join() === viTop3.slice().sort().join()) {
+    const alt = sideSums.filter(s => !viTop3.includes(s));
+    if (alt.length) viTop3[2] = alt[Math.floor(rnd() * alt.length)];
   }
   if (!viTop3.length) {
-    viTop3 = isTai ? [14, 13, 15] : [8, 9, 7];
+    viTop3.push(...(isTai ? [14, 12, 16] : [8, 6, 9]));
   }
 
   const viTong = viTop3[0];
-  const totalW = rankedSide.reduce((a, b) => a + b.w, 0) || 1;
-  const topW = rankedSide.find(x => x.sum === viTong)?.w || 0;
-  const viConf = Math.round(Math.min(72, Math.max(32, (topW / totalW) * 100 + 20)));
+  const totalW = pool.reduce((a, b) => a + b.w, 0) || 1;
+  const topW = weighted[viTong] || 0;
+  const viConf = Math.round(Math.min(74, Math.max(34, (topW / totalW) * 100 + 22)));
 
   function diceForSum(target) {
     const combos = [];
@@ -3691,11 +4246,17 @@ function enhanceSicbo(feed, ensemble) {
         for (let c = 1; c <= 6; c++)
           if (a + b + c === target) combos.push([a, b, c]);
     if (!combos.length) return null;
-    const recent = rows.slice(0, 30).map(r => (Array.isArray(r.dice) ? r.dice.join('-') : ''));
+    // Xáo nhẹ theo seed phiên
+    combos.sort((A, B) => (rnd() - 0.5));
+    const recent = rows.slice(0, 20).map(r => (Array.isArray(r.dice) ? r.dice.join('-') : ''));
     combos.sort((A, B) => recent.filter(x => x === B.join('-')).length - recent.filter(x => x === A.join('-')).length);
     return combos[0];
   }
   const diceHints = viTop3.map(sm => ({ sum: sm, dice: diceForSum(sm) }));
+
+  // Format gọn: TÀI · Vị: 11-16-18  (không ngoặc)
+  const viClean = viTop3.slice(0, 3).join('-');
+  const viText = `${sideLabel} · Vị: ${viClean}`;
 
   return {
     ...ensemble,
@@ -3706,9 +4267,10 @@ function enhanceSicbo(feed, ensemble) {
       sideRange: isTai ? '11-18' : '3-10',
       viTong,
       viConf,
-      viTop3,           // đúng 3 lần tổng (cùng phía TX)
+      viTop3,
       diceHints,
-      note: sideLabel + ' → 3 vị trong ' + (isTai ? '11–18' : '3–10')
+      viText,
+      note: viText
     }
   };
 }
@@ -3724,6 +4286,14 @@ async function pollFeed(id) {
     if (!response.ok) throw new Error('HTTP ' + response.status);
     const data = await response.json();
     let list = parseFeedData(f, data);
+    // Sicbo result is determined from the three-dice total, not a text label returned by a provider.
+    if (String(f.group || '').toLowerCase() === 'sicbo' && Array.isArray(list)) {
+      list = list.map(row => {
+        const sum = Number(row && row.sum);
+        if (Number.isFinite(sum) && sum >= 3 && sum <= 18) return { ...row, char: sum > 10 ? 'T' : 'X' };
+        return row;
+      });
+    }
     list = normalizeSessions(list);
     if (!list.length) throw new Error('API không trả về danh sách phiên phù hợp');
     // list[0] = phiên MỚI NHẤT (số lớn nhất)
@@ -3838,7 +4408,15 @@ let botSettings = loadJSON(SETTINGS_FILE, null) || {
     lockedGames: [],
     lockedCommands: []
   },
-  bankCode: '', bankAccount: '', bankAccountName: '', plans: []
+  bankCode: '', bankAccount: '', bankAccountName: '', plans: [],
+  getkeyv2MaxPerDay: 2,
+  getkeyv2LinkMinutes: 5,
+  indexKeyMinutes: 30,
+  link4mBaseUrl: 'https://link4m.co/api-shorten/v2',
+  link4mApiToken: '',
+  spamCmdLimit: 5,
+  spamWindowSec: 10,
+  spamLockSec: 30
 };
 function normalizeSettings(value) {
   const v = value || {};
@@ -3901,6 +4479,15 @@ function normalizeSettings(value) {
     bankAccountName: String(v.bankAccountName || '').trim().slice(0, 120),
     plans,
     orderTimeoutSec: Math.min(900, Math.max(60, Number(v.orderTimeoutSec || 300))),
+    // ===== GETKEYV2 / Index Key configurable =====
+    getkeyv2MaxPerDay: Math.min(20, Math.max(1, Number(v.getkeyv2MaxPerDay ?? 2))),
+    getkeyv2LinkMinutes: Math.min(30, Math.max(1, Number(v.getkeyv2LinkMinutes ?? 5))),
+    indexKeyMinutes: Math.min(180, Math.max(5, Number(v.indexKeyMinutes ?? 30))),
+    link4mBaseUrl: String(v.link4mBaseUrl || 'https://link4m.co/api-shorten/v2').trim().slice(0, 200),
+    link4mApiToken: String(v.link4mApiToken || '').trim().slice(0, 120),
+    spamCmdLimit: Math.min(20, Math.max(3, Number(v.spamCmdLimit ?? 5))),
+    spamWindowSec: Math.min(60, Math.max(5, Number(v.spamWindowSec ?? 10))),
+    spamLockSec: Math.min(300, Math.max(10, Number(v.spamLockSec ?? 30))),
     botWelcome: String(v.botWelcome || 'Chào {name}! ToolTungTung hỗ trợ mua key VIP.').slice(0, 500),
     botPayExpireText: String(v.botPayExpireText || 'Số tiền key thời gian tạo đã hết hạn. Vui lòng tạo mới nếu mua hàng.').slice(0, 400),
     showComingSoon: v.showComingSoon !== false,
@@ -3991,19 +4578,196 @@ function reviewRequest(id, approved, reviewer) {
 // ---------- public endpoints ----------
 app.get('/api/health', (req, res) => res.json({ ok: true, time: Date.now(), games: Object.keys(FEEDS) }));
 
+// ===== Link4M: user vượt xong bị redirect về đây → biết chắc đã vượt =====
+app.get('/api/link4m/pass', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  res.setHeader('Pragma', 'no-cache');
+  const code = String(req.query.c || req.query.code || '').trim();
+  const uidQ = String(req.query.u || req.query.uid || '').trim();
+
+  const page = (opts) => {
+    const { title, ok, key, minutes, err } = opts;
+    const keyBlock = key ? `
+      <div class="keybox" id="keybox">${String(key).replace(/</g,'&lt;')}</div>
+      <button type="button" class="btn" id="btnCopy">📋 Sao chép Key</button>
+      <p class="tiny" id="copied" hidden>Đã sao chép!</p>
+      <p class="hint">Hết hạn khoảng <b>${minutes || 30} phút</b> · Dùng 1 thiết bị</p>
+      <a class="link" href="/">Mở trang Index để UNLOCK →</a>
+      <script>
+        (function(){
+          var k=${JSON.stringify(String(key))};
+          var btn=document.getElementById('btnCopy');
+          var ok=document.getElementById('copied');
+          btn.addEventListener('click',function(){
+            if(navigator.clipboard&&navigator.clipboard.writeText){
+              navigator.clipboard.writeText(k).then(function(){ok.hidden=false;btn.textContent='✅ Đã sao chép';}).catch(fallback);
+            } else fallback();
+            function fallback(){
+              var t=document.createElement('textarea');t.value=k;document.body.appendChild(t);t.select();
+              try{document.execCommand('copy');ok.hidden=false;btn.textContent='✅ Đã sao chép';}catch(e){}
+              document.body.removeChild(t);
+            }
+          });
+        })();
+      </script>` : (err ? `<p class="err">${err}</p>` : '');
+    return `<!doctype html><html lang="vi"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>${title || 'Nhận Key'} · ToolTungTung</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;
+  font-family:"Be Vietnam Pro",system-ui,-apple-system,sans-serif;background:#f1f5f9;color:#0f172a}
+.card{width:100%;max-width:420px;background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:28px 22px;text-align:center;
+  box-shadow:0 1px 2px rgba(15,23,42,.06),0 8px 24px rgba(15,23,42,.06)}
+.badge{display:inline-block;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700;
+  background:${ok ? '#f0fdf4' : '#fef2f2'};color:${ok ? '#16a34a' : '#dc2626'};margin-bottom:12px}
+h1{font-size:20px;margin:0 0 8px;font-weight:700}
+.sub{color:#64748b;font-size:14px;margin:0 0 18px;line-height:1.5}
+.keybox{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:15px;font-weight:600;word-break:break-all;
+  background:#0f172a;color:#e2e8f0;padding:14px 12px;border-radius:12px;margin:0 0 14px;user-select:all}
+.btn{width:100%;border:none;border-radius:12px;padding:14px 16px;font-size:15px;font-weight:700;cursor:pointer;
+  background:#2563eb;color:#fff}
+.btn:active{transform:scale(.98)}
+.tiny{color:#16a34a;font-size:13px;font-weight:600;margin:10px 0 0}
+.hint{color:#64748b;font-size:13px;margin:14px 0 0}
+.link{display:inline-block;margin-top:16px;color:#2563eb;font-weight:600;font-size:14px;text-decoration:none}
+.err{color:#dc2626;font-size:14px}
+.foot{margin-top:18px;font-size:12px;color:#94a3b8}
+</style></head>
+<body><div class="card">
+  <div class="badge">${ok ? '✓ Vượt thành công' : 'Không hợp lệ'}</div>
+  <h1>${title || ''}</h1>
+  <p class="sub">${ok ? 'Sao chép key → quay lại Telegram gõ <b>/nhapkey KEY</b> hoặc mở Index dán key.' : ''}</p>
+  ${keyBlock}
+  <div class="foot">ToolTungTung · @SunNetWin</div>
+</div></body></html>`;
+  };
+
+  if (!code) {
+    return res.status(400).type('html').send(page({ title: 'Link không hợp lệ', ok: false, err: 'Thiếu mã xác nhận.' }));
+  }
+  let pending = pendingLink4mByCode[code] || null;
+  if (!pending && uidQ && pendingLink4m[uidQ] && pendingLink4m[uidQ].trackCode === code) {
+    pending = pendingLink4m[uidQ];
+  }
+  if (!pending) {
+    return res.status(404).type('html').send(page({
+      title: 'Link hết hạn hoặc không tồn tại',
+      ok: false,
+      err: 'Gõ /getkeyv2 trên bot để lấy link mới.'
+    }));
+  }
+  if (uidQ && String(pending.fromId) !== uidQ) {
+    return res.status(403).type('html').send(page({ title: 'Không khớp người dùng', ok: false, err: 'Mã xác nhận không khớp Telegram ID. Hãy mở link trực tiếp do bot gửi.' }));
+  }
+  if (pending.expiresAt && pending.expiresAt < Date.now()) {
+    try { delete pendingLink4mByCode[code]; } catch (e) {}
+    return res.status(410).type('html').send(page({
+      title: 'Link đã hết hạn',
+      ok: false,
+      err: 'Gõ /getkeyv2 trên bot để tạo link mới.'
+    }));
+  }
+
+  pending.verified = true;
+  pending.verifiedAt = pending.verifiedAt || Date.now();
+  const uid = String(pending.fromId || uidQ || '');
+  // Đồng bộ phiên lưu trên bot để /done không coi link đã vượt là chưa xác minh.
+  try {
+    const activeSessions = getSessions();
+    if (activeSessions[uid] && activeSessions[uid].type === 'getkeyv2' && activeSessions[uid].trackCode === code) {
+      activeSessions[uid].verified = true;
+      activeSessions[uid].verifiedAt = pending.verifiedAt;
+      saveSessions(activeSessions);
+    }
+  } catch (_) {}
+
+  const cfg = (typeof botSettings !== 'undefined' && botSettings) ? botSettings : {};
+  const keyTtlMin = Number(cfg.indexKeyMinutes) || 30;
+  const maxPerDay = Number(cfg.getkeyv2MaxPerDay) || 2;
+
+  // Phát key một lần — lưu trên pending để F5 vẫn xem lại được trong phiên
+  if (!pending.plainKey) {
+    const day = bangkokDayKey();
+    let rec = getkeyv2Uses[uid];
+    if (!rec || rec.day !== day) {
+      rec = { day, count: 0 };
+      getkeyv2Uses[uid] = rec;
+    }
+    if (rec.count >= maxPerDay) {
+      return res.type('html').send(page({
+        title: 'Hết lượt hôm nay',
+        ok: false,
+        err: 'Bạn đã vượt đủ ' + maxPerDay + ' lần. Quay lại ngày mai hoặc mua key /muakeytx.'
+      }));
+    }
+    try {
+      const issued = createKey({
+        label: 'Index Key · ' + keyTtlMin + 'p · TG ' + uid,
+        durationHours: Math.max(0.25, keyTtlMin / 60),
+        deviceLimit: 1,
+        source: 'getkeyv2-page',
+        telegramId: uid || null
+      });
+      pending.plainKey = issued.plainKey;
+      pending.keySent = true;
+      rec.count += 1;
+      saveGetkeyv2Uses();
+      // Giữ phiên pending tới hết TTL để F5 trang này vẫn trả đúng cùng key.
+      // Timer gốc sẽ dọn phiên và không nhắn hết hạn nếu đã verified/keySent.
+    } catch (e) {
+      return res.status(500).type('html').send(page({
+        title: 'Lỗi tạo key',
+        ok: false,
+        err: (e && e.message) || 'Thử lại sau.'
+      }));
+    }
+    // Báo Telegram (không phát key lần 2 — chỉ thông báo)
+    try {
+      if (pending.chatId && typeof tgSendMessage === 'function') {
+        const appUrl = getPublicBase() ? (getPublicBase() + '/') : '/';
+        await tgSendMessage(pending.chatId,
+          '✅ <b>Vượt thành công</b>\n🔑 Key đã hiện trên trang web.\nHoặc copy dòng dưới:\n<code>' +
+          String(pending.plainKey).replace(/&/g,'&amp;').replace(/</g,'&lt;') +
+          '</code>\n\n🎮 Mở Index dán key để UNLOCK.',
+          { parse_mode: 'HTML', reply_markup: { inline_keyboard: [
+            [{ text: '📋 Sao chép Key', copy_text: { text: String(pending.plainKey) } }],
+            [{ text: '🎮 Mở Index', web_app: { url: appUrl } }]
+          ] } }
+        );
+      }
+    } catch (e) {
+      try { logLine('link4m tg notify fail: ' + (e.message || e)); } catch (_) {}
+    }
+  }
+
+  return res.type('html').send(page({
+    title: 'Key của bạn',
+    ok: true,
+    key: pending.plainKey,
+    minutes: keyTtlMin
+  }));
+});
+
 // ---------- Telegram Mini App helpers ----------
 function getPublicBase() {
   let s = String(process.env.PUBLIC_URL || process.env.WEB_URL || '').trim();
   if (!s) return '';
-  if (!/^https?:\/\//i.test(s)) s = 'https://' + s;
-  return s.replace(/\/+$/, '');
+  s = s.replace(/^http:\/\//i, 'https://');
+  if (!/^https:\/\//i.test(s)) s = 'https://' + s;
+  try {
+    const u = new URL(s);
+    const h = u.hostname.toLowerCase();
+    if (['localhost','127.0.0.1','::1'].includes(h) || h.endsWith('.local')) return '';
+    return u.origin.replace(/\/+$/, '');
+  } catch (_) { return ''; }
 }
 function isTelegramAdmin(tgId) {
   const ids = String(process.env.TELEGRAM_ADMIN_IDS || process.env.ADMIN_IDS || '').split(/[,\s]+/).map(s => s.trim()).filter(Boolean);
   return ids.includes(String(tgId));
 }
 async function answerTelegram(method, body) {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const token = process.env.TELEGRAM_BOT_TOKEN || process.env.WEB_BOT_TOKEN;
   if (!token) throw new Error('no bot token');
   const r = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
     method: 'POST',
@@ -4061,6 +4825,7 @@ app.get('/api/public/config', (req, res) => {
   const games = (Array.isArray(gameConfigs) ? gameConfigs : []).filter(g => g.visible !== false).map(g => ({
     id: g.id, label: g.label || g.id, group: g.group || 'tx', brand: g.brand || g.id,
     brandLabel: g.brandLabel || g.label || g.id, variant: g.variant || '', playUrl: g.playUrl || '',
+    historyUrl: g.historyUrl || '', table: g.table || '', url: g.url || '',
     playMode: g.playMode === 'external' ? 'external' : 'embed', enabled: g.enabled !== false,
     visible: g.visible !== false, comingSoon: !!g.comingSoon,
     icon: g.icon || '', iconUrl: g.iconUrl || '', parser: g.parser || 'lc79'
@@ -4099,14 +4864,66 @@ app.post('/api/auth', (req, res) => {
   if (!rateLimit(req.ip)) return res.status(429).json({ error: 'Bạn thử quá nhiều lần. Vui lòng đợi 1 phút.' });
   const plain = String(req.body?.key || '').trim();
   if (!plain) return res.status(400).json({ error: 'Vui lòng nhập key VIP.' });
+  const deviceId = String(req.body?.deviceId || '').trim();
+  const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+  const ua = String(req.headers['user-agent'] || '').slice(0, 300);
+  const deviceHash = sha256(deviceId || (ua + '|' + ip));
+
+  // ===== Index Key (getkeyv2) — chấp nhận IDX-... =====
+  const upper = plain.toUpperCase();
+  if (upper.startsWith('IDX-') && indexKeys[upper]) {
+    const rec = indexKeys[upper];
+    if (rec.used) return res.status(401).json({ error: 'Index Key đã được sử dụng trên thiết bị khác.' });
+    if (rec.expiresAt && rec.expiresAt <= Date.now()) {
+      delete indexKeys[upper];
+      saveIndexKeys();
+      return res.status(401).json({ error: 'Index Key đã hết hạn. Gõ /getkeyv2 để lấy key mới.' });
+    }
+    // Bind 1 device
+    if (!rec.deviceHash) {
+      rec.deviceHash = deviceHash;
+      rec.used = true;
+      saveIndexKeys();
+    } else if (rec.deviceHash !== deviceHash) {
+      return res.status(401).json({ error: 'Index Key chỉ dùng được trên 1 thiết bị.' });
+    }
+    // Issue short-lived real key in keys[] so requireUser works
+    let realKey;
+    try {
+      realKey = createKey({
+        label: 'Index Key · 30p · TG ' + (rec.telegramId || ''),
+        durationHours: Math.max(0.1, ((rec.expiresAt || (Date.now() + 30 * 60000)) - Date.now()) / 3600000),
+        deviceLimit: 1,
+        source: 'index-key-v2',
+        telegramId: rec.telegramId || null
+      });
+    } catch (e) {
+      return res.status(500).json({ error: 'Không tạo được phiên: ' + (e.message || 'lỗi') });
+    }
+    const found = realKey.record;
+    const exp = found.expiresAt ? Math.min(Date.now() + USER_TOKEN_TTL_MS, found.expiresAt) : Date.now() + USER_TOKEN_TTL_MS;
+    const token = sign({ type: 'user', keyId: found.id, deviceHash, exp });
+    logLine(`index-key auth ok: ${upper.slice(0, 12)}... tg=${rec.telegramId} ip=${ip}`);
+    return res.json({
+      ok: true,
+      token,
+      expiresIn: exp - Date.now(),
+      label: found.label,
+      expiresAt: found.expiresAt || null,
+      expires_at: found.expiresAt || null,
+      deviceLimit: 1,
+      devicesUsed: 1,
+      keyExpiresAt: found.expiresAt || null,
+      expireSoon: true,
+      remainMs: found.expiresAt ? Math.max(0, found.expiresAt - Date.now()) : null
+    });
+  }
+
   const found = findKey(plain);
   if (!found || found.status === 'revoked') return res.status(401).json({ error: 'Key không hợp lệ hoặc đã bị thu hồi.' });
   if (isExpired(found)) return res.status(401).json({ error: 'Key đã hết hạn. Hãy nhận hoặc mua key mới trên Telegram.' });
-  const deviceId = String(req.body?.deviceId || '').trim();
-  const deviceHash = sha256(deviceId);
-  const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
-  const ua = String(req.headers['user-agent'] || '').slice(0, 300);
-  if (!Array.isArray(found.deviceHashes)) found.deviceHashes = [];
+  const deviceBinding = bindKeyDevice(found, deviceHash);
+  if (!deviceBinding.ok) return res.status(403).json({ error: deviceBinding.error });
   found.lastUsed = Date.now();
   found.uses = Number(found.uses || 0) + 1;
   found.lastIp = ip || found.lastIp;
@@ -4130,7 +4947,7 @@ app.post('/api/auth', (req, res) => {
     label: found.label,
     expiresAt: found.expiresAt || null,
     expires_at: found.expiresAt || null,
-    deviceLimit: 1,
+    deviceLimit: Math.max(1, Number(found.deviceLimit || 1)),
     devicesUsed: (found.deviceHashes || []).length,
     keyExpiresAt: found.expiresAt || null,
     expireSoon: found.expiresAt ? (found.expiresAt - Date.now() < 24 * 3600000) : false,
@@ -4138,23 +4955,52 @@ app.post('/api/auth', (req, res) => {
   });
 });
 
-// Tương thích UI gốc gọi /api/activate
+// Tương thích UI gốc gọi /api/activate (hỗ trợ Index Key + key thường)
 app.post('/api/activate', (req, res) => {
-  // normalize body: device_id → deviceId
   if (req.body && req.body.device_id && !req.body.deviceId) req.body.deviceId = req.body.device_id;
-  // reuse auth by internal redirect via same handler stack — call next by re-posting logic
-  req.url = '/api/auth';
-  // fallback: duplicate minimal forward
   if (!rateLimit(req.ip)) return res.status(429).json({ error: 'Bạn thử quá nhiều lần. Vui lòng đợi 1 phút.', ok: false });
   const plain = String(req.body?.key || '').trim();
   if (!plain) return res.status(400).json({ error: 'Vui lòng nhập key VIP.', ok: false });
+  const deviceId = String(req.body?.deviceId || req.body?.device_id || '').trim();
+  const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+  const ua = String(req.headers['user-agent'] || '').slice(0, 300);
+  const deviceHash = sha256(deviceId || (ua + '|' + ip));
+
+  const upper = plain.toUpperCase();
+  if (upper.startsWith('IDX-') && indexKeys[upper]) {
+    const rec = indexKeys[upper];
+    if (rec.used) return res.status(401).json({ error: 'Index Key đã được sử dụng.', ok: false });
+    if (rec.expiresAt && rec.expiresAt <= Date.now()) {
+      delete indexKeys[upper]; saveIndexKeys();
+      return res.status(401).json({ error: 'Index Key đã hết hạn.', ok: false });
+    }
+    if (!rec.deviceHash) { rec.deviceHash = deviceHash; rec.used = true; saveIndexKeys(); }
+    else if (rec.deviceHash !== deviceHash) return res.status(401).json({ error: 'Index Key chỉ dùng 1 thiết bị.', ok: false });
+    let realKey;
+    try {
+      realKey = createKey({
+        label: 'Index Key · 30p · TG ' + (rec.telegramId || ''),
+        durationHours: Math.max(0.1, ((rec.expiresAt || Date.now() + 30 * 60000) - Date.now()) / 3600000),
+        deviceLimit: 1, source: 'index-key-v2', telegramId: rec.telegramId || null
+      });
+    } catch (e) { return res.status(500).json({ error: e.message || 'lỗi', ok: false }); }
+    const found = realKey.record;
+    const exp = found.expiresAt ? Math.min(Date.now() + USER_TOKEN_TTL_MS, found.expiresAt) : Date.now() + USER_TOKEN_TTL_MS;
+    const token = sign({ type: 'user', keyId: found.id, deviceHash, exp });
+    return res.json({
+      ok: true, token, expiresIn: exp - Date.now(),
+      expires_at: found.expiresAt || null, expiresAt: found.expiresAt || null,
+      label: found.label, deviceLimit: 1, devicesUsed: 1,
+      keyExpiresAt: found.expiresAt || null, expireSoon: true,
+      remainMs: found.expiresAt ? Math.max(0, found.expiresAt - Date.now()) : null
+    });
+  }
+
   const found = findKey(plain);
   if (!found || found.status === 'revoked') return res.status(401).json({ error: 'Key không hợp lệ hoặc đã bị thu hồi.', ok: false });
   if (isExpired(found)) return res.status(401).json({ error: 'Key đã hết hạn. Hãy nhận hoặc mua key mới trên Telegram.', ok: false });
-  const deviceId = String(req.body?.deviceId || req.body?.device_id || '').trim();
-  const deviceHash = sha256(deviceId);
-  const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
-  if (!Array.isArray(found.deviceHashes)) found.deviceHashes = [];
+  const deviceBinding = bindKeyDevice(found, deviceHash);
+  if (!deviceBinding.ok) return res.status(403).json({ error: deviceBinding.error, ok: false });
   found.lastUsed = Date.now();
   found.uses = Number(found.uses || 0) + 1;
   found.lastIp = ip || found.lastIp;
@@ -4162,17 +5008,11 @@ app.post('/api/activate', (req, res) => {
   const requestedExpiry = Date.now() + USER_TOKEN_TTL_MS;
   const exp = found.expiresAt ? Math.min(requestedExpiry, found.expiresAt) : requestedExpiry;
   const token = sign({ type: 'user', keyId: found.id, deviceHash, exp });
-  const ua = String(req.headers['user-agent'] || '').slice(0, 300);
   logLine(`activate ${found.label || found.id} ip=${ip} ua=${ua.slice(0,40)}`);
   res.json({
-    ok: true,
-    token,
-    expiresIn: exp - Date.now(),
-    expires_at: found.expiresAt || null,
-    expiresAt: found.expiresAt || null,
-    label: found.label,
-    deviceLimit: 1,
-    devicesUsed: (found.deviceHashes || []).length,
+    ok: true, token, expiresIn: exp - Date.now(),
+    expires_at: found.expiresAt || null, expiresAt: found.expiresAt || null,
+    label: found.label, deviceLimit: Math.max(1, Number(found.deviceLimit || 1)), devicesUsed: (found.deviceHashes || []).length,
     keyExpiresAt: found.expiresAt || null,
     expireSoon: found.expiresAt ? (found.expiresAt - Date.now() < 24 * 3600000) : false,
     remainMs: found.expiresAt ? Math.max(0, found.expiresAt - Date.now()) : null
@@ -4181,6 +5021,7 @@ app.post('/api/activate', (req, res) => {
 
 app.post('/api/admin/login', (req, res) => {
   if (!rateLimit(req.ip)) return res.status(429).json({ error: 'Bạn thử quá nhiều lần. Vui lòng đợi 1 phút.' });
+  if (!ADMIN_PASSWORDS.length) return res.status(503).json({ error: 'Chưa cấu hình ADMIN_PASSWORD trên Railway Variables.' });
   const password = String(req.body?.password || '').trim();
   if (!ADMIN_PASSWORDS.some(candidate => secureEqual(password, candidate))) return res.status(401).json({ error: 'Mật khẩu admin không đúng.' });
   const token = sign({ type: 'admin', exp: Date.now() + TOKEN_TTL_MS });
@@ -4197,13 +5038,36 @@ app.post('/api/admin/login', (req, res) => {
 const TRIAL_FILE = path.join(DATA_DIR, 'telegram_trial_uses.json');
 let trialUses = loadJSON(TRIAL_FILE, {});
 if (!trialUses || typeof trialUses !== 'object' || Array.isArray(trialUses)) trialUses = {};
-function bangkokDayKey(ts = Date.now()) {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(ts));
-}
+
 // Trial issuance must pass through the Telegram bot task (/getkeyv1); do not mint a free key from a direct HTTP request.
 app.post('/api/trial/telegram', (req, res) => res.status(403).json({ ok: false, error: 'Key dùng thử chỉ được cấp sau khi hoàn thành nhiệm vụ trong Telegram bot. Gõ /getkeyv1.' }));
 
-app.get('/api/games', requireUser, (req, res) => res.json({ ok: true, games: gameConfigs.filter(g => g.enabled !== false && g.visible !== false && !g.comingSoon && FEEDS[g.id] && String(g.parser||'') !== 'tx' && String(g.group||'') !== 'tx').map(g => ({ id: g.id, label: g.label, gameType: g.group === 'sicbo' ? 'sicbo' : 'tx', group: g.group || 'tx', icon: g.icon || '', brand: g.brand || g.id, brandLabel: g.brandLabel || g.label, variant: g.variant || '', playUrl: g.playUrl || '', icon: g.icon || '', iconUrl: g.iconUrl || '' })) }));
+// Validate Index Key from Mini App (one-time, 30 min)
+app.post('/api/index-key/validate', (req, res) => {
+  const key = String(req.body?.key || req.query?.key || '').trim().toUpperCase();
+  const deviceHash = String(req.body?.device || req.headers['x-device-hash'] || '').slice(0, 64);
+  if (!key || !indexKeys[key]) return res.status(401).json({ ok: false, error: 'Key không hợp lệ hoặc đã hết hạn.' });
+  const rec = indexKeys[key];
+  if (rec.used) return res.status(401).json({ ok: false, error: 'Key đã được sử dụng.' });
+  if (rec.expiresAt && rec.expiresAt <= Date.now()) {
+    delete indexKeys[key];
+    saveIndexKeys();
+    return res.status(401).json({ ok: false, error: 'Key đã hết hạn.' });
+  }
+  if (!rec.deviceHash && deviceHash) {
+    rec.deviceHash = deviceHash;
+    rec.used = true;
+    saveIndexKeys();
+  } else if (rec.deviceHash && deviceHash && rec.deviceHash !== deviceHash) {
+    return res.status(401).json({ ok: false, error: 'Key chỉ dùng được trên 1 thiết bị.' });
+  } else {
+    rec.used = true;
+    saveIndexKeys();
+  }
+  res.json({ ok: true, expiresAt: rec.expiresAt, label: 'Index Key · 30 phút' });
+});
+
+app.get('/api/games', requireUser, (req, res) => res.json({ ok: true, games: gameConfigs.filter(g => g.enabled !== false && g.visible !== false && !g.comingSoon && FEEDS[g.id]).map(g => ({ id: g.id, label: g.label, gameType: g.group === 'sicbo' ? 'sicbo' : (g.group === 'md5' || /md5/i.test(String(g.variant || '') + ' ' + String(g.id || '')) ? 'md5' : 'tx'), group: g.group || 'tx', icon: g.icon || '', brand: g.brand || g.id, brandLabel: g.brandLabel || g.label, variant: g.variant || '', playUrl: g.playUrl || '', historyUrl: g.historyUrl || '', playMode: g.playMode === 'external' ? 'external' : 'embed', iconUrl: g.iconUrl || '' })) }));
 app.get('/api/me', requireUser, (req, res) => {
   const k = req.userKey;
   res.json({
@@ -4234,8 +5098,31 @@ app.get('/api/predict', requireUser, async (req, res) => {
   if (cfg.group === 'sicbo' || f.group === 'sicbo') {
     ensemble = enhanceSicbo(f, ensemble);
   }
+  f.lastEnsemble = ensemble; // để lần sau anti-repeat vị
   const ms = f.engine.marketState || ensemble.market || {};
-  const gameType = ensemble.gameType || (f.parser === 'tx' ? 'tx' : (cfg.group === 'sicbo' ? 'sicbo' : 'tx'));
+  const configuredGameType = cfg.group === 'sicbo' ? 'sicbo' : (cfg.group === 'md5' || /md5/i.test(String(cfg.variant || '') + ' ' + String(cfg.id || '')) ? 'md5' : 'tx');
+  const gameType = configuredGameType || ensemble.gameType || 'tx';
+  // Tính phiên tiếp theo thật chắc chắn (nhiều nguồn fallback)
+  let nextSess = null;
+  if (f.openSession != null && f.openSession !== '') {
+    nextSess = f.openSession;
+  } else if (f.lastLive && f.lastLive.session != null && f.lastLive.session !== '') {
+    const n = Number(f.lastLive.session);
+    nextSess = Number.isFinite(n) ? n + 1 : f.lastLive.session;
+  } else if (f.history && f.history.length) {
+    const n = Number(f.history[0].session);
+    nextSess = Number.isFinite(n) ? n + 1 : f.history[0].session;
+  } else if (f.lastSession != null) {
+    const n = Number(f.lastSession);
+    nextSess = Number.isFinite(n) ? n + 1 : f.lastSession;
+  } else if (f.rawMaxSession != null) {
+    nextSess = Number(f.rawMaxSession) + 1;
+  }
+  // Ép string để frontend luôn hiện được
+  if (nextSess != null && nextSess !== '') nextSess = String(nextSess);
+
+  const lastSess = f.lastLive ? f.lastLive.session : (f.history && f.history[0] ? f.history[0].session : (f.lastSession || null));
+
   res.json({
     game: req.query.game,
     label: f.label,
@@ -4249,8 +5136,23 @@ app.get('/api/predict', requireUser, async (req, res) => {
     reason: ensemble.reason || ensemble.topReason,
     regime: ms.regime || null,
     trend: ms.trend || null,
-    lastSession: f.lastLive ? f.lastLive.session : (f.lastSession || null),
-    nextSession: (f.openSession != null ? f.openSession : (f.lastLive && Number.isFinite(Number(f.lastLive.session)) ? Number(f.lastLive.session) + 1 : null)),
+    lastSession: lastSess,
+    nextSession: nextSess,
+    // aliases cho frontend J() — bắt buộc để hiện PHIÊN
+    target_session: nextSess,
+    next_session: nextSess,
+    phien_tiep: nextSess,
+    phien_du_doan: nextSess,
+    target: nextSess,
+    nextSessionId: nextSess,
+    next_session_id: nextSess,
+    currentSession: lastSess,
+    current_session: lastSess,
+    sessionId: lastSess,
+    session_id: lastSess,
+    session: lastSess,
+    phien: lastSess,
+    id: lastSess,
     live: f.lastLive || null,
     accuracy: f.total ? { correct: f.correct, total: f.total, pct: +(f.correct / f.total * 100).toFixed(1) } : null,
     feedError: f.lastError || null,
@@ -4378,6 +5280,17 @@ app.delete('/api/admin/keys/:id', requireAdmin, (req, res) => {
 
 // ---------- admin: game API management ----------
 app.get('/api/admin/games', requireAdmin, (req, res) => res.json({ games: gameConfigs.map(g => ({ ...g, lastSession: FEEDS[g.id]?.lastSession ?? null, historyCount: FEEDS[g.id]?.history.length || 0, lastError: FEEDS[g.id]?.lastError || null })) }));
+app.post('/api/admin/games/reorder', requireAdmin, (req, res) => {
+  const requested = Array.isArray(req.body?.ids) ? req.body.ids.map(x => String(x)) : [];
+  if (!requested.length || requested.length !== gameConfigs.length || new Set(requested).size !== gameConfigs.length || requested.some(id => !gameConfigs.some(g => g.id === id))) {
+    return res.status(400).json({ error: 'Danh sách thứ tự game không hợp lệ.' });
+  }
+  const byId = new Map(gameConfigs.map(g => [g.id, g]));
+  gameConfigs = requested.map(id => byId.get(id));
+  saveGameConfigs();
+  logLine('game order updated: ' + requested.join(','));
+  res.json({ ok: true, ids: requested });
+});
 app.post('/api/admin/games', requireAdmin, (req, res) => {
   const id = String(req.body?.id || '').trim().toLowerCase();
   const label = String(req.body?.label || '').trim();
@@ -4387,7 +5300,21 @@ app.post('/api/admin/games', requireAdmin, (req, res) => {
   if (gameConfigs.some(g => g.id === id)) return res.status(409).json({ error: 'Mã game đã tồn tại.' });
   if (!label) return res.status(400).json({ error: 'Hãy nhập tên game.' });
   if (!validHttpUrl(url)) return res.status(400).json({ error: 'API phải là URL HTTP hoặc HTTPS hợp lệ.' });
-  const config = { id, label: label.slice(0, 80), url, parser, table: String(req.body?.table || '').slice(0, 80), playUrl: String(req.body?.playUrl || '').trim().slice(0, 500), playMode: req.body?.playMode === 'external' ? 'external' : 'embed', enabled: req.body?.enabled !== false, visible: req.body?.visible !== false, comingSoon: !!req.body?.comingSoon };
+  const groupRaw = String(req.body?.group || 'tx').toLowerCase();
+  const group = ['tx','sicbo','md5'].includes(groupRaw) ? groupRaw : 'tx';
+  const config = {
+    id, label: label.slice(0, 80), brand: String(req.body?.brand || id).trim().slice(0, 40),
+    brandLabel: String(req.body?.brandLabel || req.body?.brand || label).trim().slice(0, 80),
+    url, parser, table: String(req.body?.table || '').slice(0, 80),
+    playUrl: String(req.body?.playUrl || '').trim().slice(0, 500),
+    historyUrl: String(req.body?.historyUrl || '').trim().slice(0, 500),
+    variant: String(req.body?.variant || group.toUpperCase()).trim().slice(0, 40),
+    group, icon: String(req.body?.icon || id).trim().slice(0, 40),
+    iconUrl: String(req.body?.iconUrl || '').trim().slice(0, 500),
+    playMode: req.body?.playMode === 'external' ? 'external' : 'embed',
+    enabled: req.body?.enabled !== false, visible: req.body?.visible !== false,
+    comingSoon: !!req.body?.comingSoon
+  };
   gameConfigs.push(config); saveGameConfigs(); FEEDS[id] = createFeed(config); logLine(`game added: ${id}`);
   res.json({ ok: true, game: config });
 });
@@ -4408,7 +5335,7 @@ app.patch('/api/admin/games/:id', requireAdmin, (req, res) => {
   if (req.body?.brand !== undefined) config.brand = String(req.body.brand || config.id).trim().slice(0, 40);
   if (req.body?.brandLabel !== undefined) config.brandLabel = String(req.body.brandLabel || config.label).trim().slice(0, 80);
   if (req.body?.variant !== undefined) config.variant = String(req.body.variant || '').trim().slice(0, 40);
-  if (req.body?.group !== undefined) config.group = ['tx','sicbo'].includes(String(req.body.group)) ? String(req.body.group) : (config.group || 'tx');
+  if (req.body?.group !== undefined) config.group = ['tx','sicbo','md5'].includes(String(req.body.group).toLowerCase()) ? String(req.body.group).toLowerCase() : (config.group || 'tx');
   if (req.body?.historyUrl !== undefined) config.historyUrl = String(req.body.historyUrl || '').trim().slice(0, 500);
   if (req.body?.icon !== undefined) config.icon = String(req.body.icon || '').trim().slice(0, 40);
   if (req.body?.iconUrl !== undefined) config.iconUrl = String(req.body.iconUrl || '').trim().slice(0, 500);
@@ -4648,7 +5575,7 @@ function buildVietQr(amount, addInfo) {
 }
 
 async function tgSendMessage(chatId, text, extra) {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const token = process.env.TELEGRAM_BOT_TOKEN || process.env.WEB_BOT_TOKEN;
   if (!token || !chatId) return false;
   try {
     const r = await fetch('https://api.telegram.org/bot' + token + '/sendMessage', {
