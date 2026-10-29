@@ -2913,9 +2913,9 @@ Key sẽ được gửi khi giao dịch được xác nhận.
     const plan = plans().find(p => p.id === String(planId || '').toLowerCase());
     if (!plan) return send(chatId, '❌ Gói không tồn tại. Gõ /muakeytx để chọn lại.');
     const config = options.getConfig();
-    if (!config.bankCode || !config.bankAccount || !config.bankAccountName) {
+    if (!String(config.bankCode || '').trim() || !String(config.bankAccount || '').trim() || !String(config.bankAccountName || '').trim()) {
       logLine('[shop] payment unavailable: bank account settings incomplete');
-      return send(chatId, 'Hiện chưa thể tạo mã thanh toán. Vui lòng thử lại sau hoặc liên hệ @SunNetWin.');
+      return send(chatId, '⚠️ Chưa cấu hình STK nhận tiền.\nAdmin: Index Admin → tab Ngân hàng → Lưu.\nHoặc bot: <code>/setbank VCB 0123456789 NGUYEN VAN A</code>');
     }
     const orderId = genOrderId();
     const timeoutSec = Math.min(900, Math.max(60, Number(config.orderTimeoutSec || 300)));
@@ -2935,32 +2935,58 @@ Key sẽ được gửi khi giao dịch được xác nhận.
         if (typeof saveOrders === 'function') saveOrders();
       }
     } catch (e) {}
-    const qr = buildVietQr(plan.price, orderId) || (`https://img.vietqr.io/image/${encodeURIComponent(config.bankCode)}-${encodeURIComponent(config.bankAccount)}-compact2.jpg?amount=${encodeURIComponent(String(plan.price))}&addInfo=${encodeURIComponent(orderId)}&accountName=${encodeURIComponent(config.bankAccountName)}`);
+    const bankCode = String(config.bankCode || '').trim();
+    const bankAccount = String(config.bankAccount || '').trim().replace(/\s+/g, '');
+    const bankName = String(config.bankAccountName || '').trim();
+    if (!bankCode || !bankAccount || !bankName) {
+      return send(chatId, '⚠️ Chưa cấu hình ngân hàng nhận tiền.\nAdmin vào Index Admin → Ngân hàng để lưu STK.');
+    }
+    let qr = '';
+    try {
+      if (typeof buildVietQr === 'function') qr = buildVietQr(plan.price, orderId) || '';
+    } catch (e) { qr = ''; }
+    if (!qr) {
+      qr = 'https://img.vietqr.io/image/' + encodeURIComponent(bankCode) + '-' + encodeURIComponent(bankAccount)
+        + '-compact2.jpg?amount=' + encodeURIComponent(String(Math.round(Number(plan.price) || 0)))
+        + '&addInfo=' + encodeURIComponent(orderId)
+        + '&accountName=' + encodeURIComponent(bankName);
+    }
     const days = plan.durationHours >= 24 ? `${Math.round(plan.durationHours / 24)} ngày` : `${plan.durationHours}h`;
-    const sent = await sendPhoto(chatId, qr, {
-      caption:
+    const caption =
 `<b>💳 THANH TOÁN KEY</b>
 ━━━━━━━━━━━━━━━━━━━━
 📦 Gói: <b>${esc(plan.label)}</b>
 ⏱ Thời hạn: <b>${days}</b>
 💰 Số tiền: <b>${fmt(plan.price)}đ</b>
 
-🏦 <b>${esc(config.bankCode)}</b>
-💳 STK: <code>${esc(config.bankAccount)}</code>
-👤 ${esc(config.bankAccountName)}
+🏦 <b>${esc(bankCode)}</b>
+💳 STK: <code>${esc(bankAccount)}</code>
+👤 ${esc(bankName)}
 
 📝 Nội dung chuyển khoản (bắt buộc):
 <code>${orderId}</code>
 
-✅ Sau khi chuyển khoản, gõ <b>DONE</b> (hoặc bấm nút bên dưới) để hệ thống xác nhận và gửi yêu cầu duyệt.
-📎 Có thể đính kèm ảnh bill (không bắt buộc).
+✅ Sau khi chuyển khoản, gõ <b>DONE</b> (hoặc bấm nút) để hệ thống xác nhận.
 ⏰ Hết hạn sau <b>${Math.round(timeoutSec/60)} phút</b>.
-💬 @SunNetWin`,
-      reply_markup: { inline_keyboard: [
-        [{ text: '✅ DONE — Xác nhận đã CK', callback_data: 'pay:done' }],
-        [{ text: '❌ Hủy đơn', callback_data: 'cmd:cancel' }]
-      ] }
-    });
+💬 @SunNetWin`;
+    const kb = { inline_keyboard: [
+      [{ text: '✅ DONE — Xác nhận đã CK', callback_data: 'pay:done' }],
+      [{ text: '❌ Hủy đơn', callback_data: 'cmd:cancel' }]
+    ] };
+    let sent = null;
+    try {
+      sent = await sendPhoto(chatId, qr, { caption, reply_markup: kb });
+    } catch (e1) {
+      try {
+        // fallback: ảnh print template
+        const qr2 = qr.replace('-compact2.jpg', '-print.jpg');
+        sent = await sendPhoto(chatId, qr2, { caption, reply_markup: kb });
+      } catch (e2) {
+        // fallback text + link QR
+        await send(chatId, caption + '\n\n🔗 Mở mã QR:\n' + qr, { reply_markup: kb });
+        sent = null;
+      }
+    }
     const msgId = sent && (sent.message_id || (sent.result && sent.result.message_id));
     if (msgId && typeof orders !== 'undefined') {
       const o = orders.find(x => x.id === orderId);
@@ -4129,6 +4155,15 @@ function saveGameConfigs() { saveJSON(GAMES_FILE, gameConfigs); }
       if (g[k] !== v) { g[k] = v; changed = true; }
     }
   }
+  // luôn ép visible + enabled cho game mới
+  for (const id of Object.keys(want)) {
+    const g = gameConfigs.find(x => x.id === id);
+    if (g) {
+      if (g.visible === false) { g.visible = true; changed = true; }
+      if (g.enabled === false) { g.enabled = true; changed = true; }
+      if (g.comingSoon) { g.comingSoon = false; changed = true; }
+    }
+  }
   if (changed) {
     try { saveGameConfigs(); } catch (e) {}
   }
@@ -4136,12 +4171,41 @@ function saveGameConfigs() { saveJSON(GAMES_FILE, gameConfigs); }
 function initializeFeedConfigs() {
   for (const key of Object.keys(FEEDS)) delete FEEDS[key];
   for (const g of gameConfigs) {
-    if (!g || !/^[a-z0-9_-]{2,32}$/i.test(String(g.id || '')) || !validHttpUrl(g.url)) continue;
-    g.id = String(g.id); g.label = String(g.label || g.id); g.parser = ['sunwin','max789','b52hist'].includes(g.parser) ? g.parser : 'lc79'; g.table = g.table || ''; g.playUrl = String(g.playUrl || g.play_url || g.gameLink || '').trim().slice(0, 500); g.group = g.group || (g.parser === 'tx' ? 'tx' : 'tx'); g.icon = g.icon || ''; g.historyUrl = g.historyUrl || ''; g.brand = g.brand || g.id; g.brandLabel = g.brandLabel || g.label; g.variant = g.variant || ''; g.enabled = g.enabled !== false;
+    if (!g || !/^[a-z0-9_-]{2,40}$/i.test(String(g.id || ''))) continue;
+    const urlOk = validHttpUrl(g.url) || /^https?:\/\//i.test(String(g.url || ''));
+    if (!urlOk) continue;
+    g.id = String(g.id);
+    g.label = String(g.label || g.id);
+    g.parser = ['sunwin','max789','b52hist','lc79'].includes(String(g.parser || '')) ? g.parser : 'sunwin';
+    g.table = g.table || '';
+    g.playUrl = String(g.playUrl || g.play_url || g.gameLink || '').trim().slice(0, 500);
+    g.group = g.group || 'tx';
+    g.icon = g.icon || '';
+    g.historyUrl = g.historyUrl || '';
+    g.brand = g.brand || g.id;
+    g.brandLabel = g.brandLabel || g.label;
+    g.variant = g.variant || '';
+    g.enabled = g.enabled !== false;
+    g.visible = g.visible !== false;
     FEEDS[g.id] = createFeed(g);
   }
 }
 initializeFeedConfigs();
+// Bảo đảm 68GB / 789Club luôn có FEEDS (kể cả khi url tạm lỗi vẫn hiện trên Index)
+(function ensureExtraFeeds() {
+  const must = ['gb68_md5', 'club789_tx', 'sicbo_789', 'lc79_hu', 'lc79_md5', 'sicbo_b52'];
+  for (const id of must) {
+    const g = gameConfigs.find(x => x.id === id);
+    if (!g) continue;
+    g.visible = true;
+    g.enabled = g.enabled !== false;
+    g.comingSoon = false;
+    if (!FEEDS[id] && g.url) {
+      try { FEEDS[id] = createFeed(g); } catch (e) {}
+    }
+  }
+  try { saveGameConfigs(); } catch (e) {}
+})();
 
 function parseSunwin(data) {
   let full = [];
@@ -5986,8 +6050,14 @@ function genOrderId() {
 
 function buildVietQr(amount, addInfo) {
   const cfg = botSettings || {};
-  if (!cfg.bankCode || !cfg.bankAccount) return null;
-  return 'https://img.vietqr.io/image/' + encodeURIComponent(cfg.bankCode) + '-' + encodeURIComponent(cfg.bankAccount) + '-compact2.jpg?amount=' + encodeURIComponent(String(Math.round(Number(amount)||0))) + '&addInfo=' + encodeURIComponent(addInfo) + '&accountName=' + encodeURIComponent(cfg.bankAccountName || '');
+  const code = String(cfg.bankCode || '').trim();
+  const acc = String(cfg.bankAccount || '').trim().replace(/\s+/g, '');
+  const name = String(cfg.bankAccountName || '').trim();
+  if (!code || !acc) return null;
+  return 'https://img.vietqr.io/image/' + encodeURIComponent(code) + '-' + encodeURIComponent(acc)
+    + '-compact2.jpg?amount=' + encodeURIComponent(String(Math.round(Number(amount) || 0)))
+    + '&addInfo=' + encodeURIComponent(String(addInfo || ''))
+    + '&accountName=' + encodeURIComponent(name);
 }
 
 async function tgSendMessage(chatId, text, extra) {
