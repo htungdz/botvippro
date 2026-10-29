@@ -132,29 +132,6 @@ input:focus,select:focus,textarea:focus{outline:3px solid rgba(37,99,235,.12)!im
 .hint{line-height:1.55!important;color:#64748b!important}
 @media(max-width:700px){body{font-size:14px!important}.topbar,.topbar-inner,.header,.head{position:static!important}.tabs,.nav-tabs{grid-template-columns:repeat(2,minmax(0,1fr))!important}.tabs button,.nav-tabs button{white-space:normal;min-height:42px;line-height:1.25}.game-item .top{flex-direction:column}.game-item .top>div:last-child{width:100%;display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px!important}.game-item .top .btn{padding:9px 6px!important;min-width:0;font-size:12px!important}.game-item .grid2{grid-template-columns:minmax(0,1fr)!important}.game-item{padding:12px!important}.table-wrap{border-radius:12px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition:none!important}}
-
-/* Max polish: clearer hierarchy and command-first controls */
-.topbar{backdrop-filter:saturate(150%) blur(12px);background:rgba(255,255,255,.94)!important}
-.brand{letter-spacing:-.025em;font-size:16px}
-.card h2{letter-spacing:-.02em}
-.card .hint,label.f small{line-height:1.55}
-.btn{box-shadow:0 2px 5px rgba(37,99,235,.12)}
-.btn.sec{box-shadow:none}
-.game-item{padding:15px!important}
-.game-item .top strong{font-size:14px;letter-spacing:-.01em}
-@media(max-width:700px){main{padding-top:12px!important}.topbar{position:relative}.brand{width:100%}.btn-out{margin-left:0}.tabs button{border:1px solid #e6edf7!important;background:#fff!important}.tabs button.active{border-color:#bfd3fb!important;background:#eff6ff!important}.row-actions .btn{flex:1 1 auto}.game-item .row-actions .btn{flex:1 1 42%}}
-
-
-/* Live trend charts + complete game road history */
-.trend-card{overflow:hidden;position:relative;background:linear-gradient(145deg,#fff 0%,#f8fbff 58%,#f3f7ff 100%)!important}
-.trend-controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.trend-controls select{max-width:240px;padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--text)}
-.trend-metrics{display:flex;gap:9px;flex-wrap:wrap;margin:10px 0 12px}.trend-metrics span{background:#f8fafc;border:1px solid #e2e8f0;padding:7px 10px;border-radius:10px;color:#475569;font-size:12px;font-weight:700}
-.chart-stage{height:235px;position:relative;border:1px solid #e5edf8;border-radius:14px;overflow:hidden;background:repeating-linear-gradient(to bottom,rgba(148,163,184,.10) 0,rgba(148,163,184,.10) 1px,transparent 1px,transparent 44px),linear-gradient(180deg,#fbfdff,#f5f9ff)}
-.chart-stage canvas{display:block;width:100%;height:100%;position:relative;z-index:1}.chart-watermark{position:absolute;right:12px;top:8px;font-size:9px;letter-spacing:.13em;color:#94a3b8;font-weight:800;pointer-events:none}.chart-legend{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:12px;color:#64748b}.chart-legend span{display:inline-flex;align-items:center;gap:6px}.legend-dot{display:inline-block;width:8px;height:8px;border-radius:50%}.legend-dot.up{background:#0d9488}.legend-dot.down{background:#e11d48}
-.history-filters{margin-bottom:14px}.history-summary{font-size:13px;color:#475569;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px}.history-game-grid{display:grid;grid-template-columns:1fr;gap:14px}.history-game-card{background:#fff;border:1px solid #dfe7f2;border-radius:16px;padding:15px;box-shadow:0 5px 20px rgba(19,39,73,.04);min-width:0}.history-game-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;margin-bottom:10px}.history-game-head h3{margin:0;font-size:15px}.history-meta{font-size:12px;color:#64748b;margin-top:3px}.road-wrap{overflow:auto;max-width:100%;border:1px solid #e6edf6;border-radius:11px;background:linear-gradient(180deg,#fbfdff,#f8fafc);padding:10px;margin:10px 0}.road-grid{display:grid;grid-auto-flow:column;grid-template-rows:repeat(6,28px);grid-auto-columns:28px;gap:4px;min-width:max-content}.road-cell{width:28px;height:28px;border:1px solid #dbe4ef;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:900;color:#64748b;background:#fff}.road-cell.t{border:2px solid #e11d48;color:#be123c;background:#fff1f2}.road-cell.x{border:2px solid #2563eb;color:#1d4ed8;background:#eff6ff}.road-cell.other{border:2px solid #0d9488;color:#0f766e;background:#f0fdfa}.road-cell.empty{opacity:.3}.history-chart{height:190px;border:1px solid #e5edf8;border-radius:12px;overflow:hidden;background:repeating-linear-gradient(to bottom,rgba(148,163,184,.09) 0,rgba(148,163,184,.09) 1px,transparent 1px,transparent 38px),#fbfdff;margin:10px 0}.history-chart canvas{width:100%;height:100%;display:block}.history-table-wrap{max-height:380px;overflow:auto;border:1px solid #e2e8f0;border-radius:10px}.history-table-wrap table{min-width:650px}.history-pred-hit{color:#15803d;font-weight:800}.history-pred-miss{color:#be123c;font-weight:800}.history-empty{padding:18px;color:#64748b;text-align:center;background:#f8fafc;border-radius:10px}
-@keyframes chartSweep{from{opacity:.35;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)}}.trend-card .chart-stage{animation:chartSweep .5s ease-out}
-@media(max-width:700px){.trend-controls{width:100%}.trend-controls select{flex:1;max-width:none}.chart-stage{height:205px}.history-game-card{padding:11px}.road-grid{grid-template-rows:repeat(6,25px);grid-auto-columns:25px;gap:3px}.road-cell{width:25px;height:25px}.history-chart{height:165px}}
-
 </style>
 </head>
 <body>
@@ -177,7 +154,6 @@ input:focus,select:focus,textarea:focus{outline:3px solid rgba(37,99,235,.12)!im
     <div class="brand">ToolTungTung <span>Quản trị</span></div>
     <nav class="tabs" id="tabs">
       <button data-tab="dash" class="active">Tổng quan</button>
-      <button data-tab="history">Lịch sử & cầu</button>
       <button data-tab="bank">Ngân hàng</button>
       <button data-tab="games">Link game</button>
       <button data-tab="system">Hệ thống</button>
@@ -195,15 +171,6 @@ input:focus,select:focus,textarea:focus{outline:3px solid rgba(37,99,235,.12)!im
     <!-- Tổng quan -->
     <section class="panel active" data-panel="dash">
       <div class="stats" id="statCards"></div>
-      <div class="card trend-card">
-        <div class="card-head">
-          <div><h2>Nhịp kết quả theo phiên</h2><p class="hint" style="margin:0">Biểu đồ cập nhật từ lịch sử thực tế của bàn đã chọn</p></div>
-          <div class="trend-controls"><select id="dashTrendGame" aria-label="Chọn game cho biểu đồ"><option value="">Đang tải game…</option></select><button class="btn sec sm" id="btnRefreshTrend">Làm mới biểu đồ</button></div>
-        </div>
-        <div class="trend-metrics" id="dashTrendMetrics"><span>Đang tải dữ liệu…</span></div>
-        <div class="chart-stage"><canvas id="dashTrendCanvas" height="210" aria-label="Biểu đồ kết quả theo phiên"></canvas><div class="chart-watermark">ToolTungTung · LIVE HISTORY</div></div>
-        <div class="chart-legend"><span><i class="legend-dot up"></i>TÀI / giá trị cao</span><span><i class="legend-dot down"></i>XỈU / giá trị thấp</span><span class="hint">Đường biểu diễn kết quả lịch sử, không phải cam kết dự đoán.</span></div>
-      </div>
       <div class="card">
         <div class="card-head">
           <div>
@@ -219,23 +186,6 @@ input:focus,select:focus,textarea:focus{outline:3px solid rgba(37,99,235,.12)!im
           </table>
         </div>
       </div>
-    </section>
-
-    <!-- Lịch sử và biểu đồ cầu toàn bộ game -->
-    <section class="panel" data-panel="history">
-      <div class="card">
-        <div class="card-head">
-          <div><h2>Lịch sử kết quả & biểu đồ cầu</h2><p class="hint" style="margin:0">Chọn một game hoặc xem tất cả bàn. Dữ liệu lấy từ history feed của server.</p></div>
-          <button class="btn sec sm" id="btnRefreshAllHistory">Cập nhật lịch sử</button>
-        </div>
-        <div class="grid3 history-filters">
-          <label class="f">Game / bàn<select id="historyGame"><option value="all">Tất cả game</option></select></label>
-          <label class="f">Số phiên cần tải<select id="historyLimit"><option value="100">100 phiên</option><option value="300">300 phiên</option><option value="500">500 phiên</option><option value="1000">1.000 phiên</option><option value="5000">Tối đa 5.000 phiên</option></select></label>
-          <label class="f">Hiển thị<select id="historyView"><option value="both">Biểu đồ cầu + bảng</option><option value="road">Chỉ biểu đồ cầu</option><option value="table">Chỉ bảng lịch sử</option></select></label>
-        </div>
-        <div class="history-summary" id="historySummary">Chọn game rồi bấm Cập nhật lịch sử.</div>
-      </div>
-      <div id="allGameHistory" class="history-game-grid"></div>
     </section>
 
     <!-- Ngân hàng -->
@@ -337,7 +287,6 @@ input:focus,select:focus,textarea:focus{outline:3px solid rgba(37,99,235,.12)!im
         <p class="hint">Giới hạn vượt link, thời gian sống key, chống spam lệnh bot.</p>
         <div class="grid3">
           <label class="f">Số lần /getkeyv2 mỗi ngày<input id="getkeyv2MaxPerDay" type="number" min="1" max="20"/></label>
-          <label class="f">Thời hạn key V2 (giờ)<input id="getkeyv2KeyHours" type="number" min="0.25" max="168" step="0.25"/><small>Ví dụ 18 = 18 giờ</small></label>
           <label class="f">Huỷ link 4M sau (phút)<input id="getkeyv2LinkMinutes" type="number" min="1" max="30"/></label>
           <label class="f">Index Key sống (phút)<input id="indexKeyMinutes" type="number" min="5" max="180"/></label>
           <label class="f">Base URL Link4M<input id="link4mBaseUrl" type="url" placeholder="https://link4m.co/api-shorten/v2"/></label>
@@ -367,7 +316,7 @@ input:focus,select:focus,textarea:focus{outline:3px solid rgba(37,99,235,.12)!im
           <label class="f">Tiêu đề site<input id="siteTitle"/></label>
           <label class="f">Username Telegram bot<input id="telegramUsername" placeholder="không cần @"/></label>
           <label class="f">Link bot mua key / nhiệm vụ<input id="telegramBotUrl" placeholder="https://t.me/TenBot"/></label>
-          <label class="f">ID kênh đăng chia sẻ người dùng & bill đã duyệt<input id="feedbackChannelId" placeholder="@kenh_phan_hoi hoặc -100..."/></label>
+          <label class="f">ID kênh nhận bill & góp ý sau duyệt<input id="feedbackChannelId" placeholder="@kenh_phan_hoi hoặc -100..."/></label>
           <label class="f">Link hỗ trợ<input id="supportUrl" placeholder="https://t.me/..."/></label>
           <label class="f">Chữ watermark<input id="watermarkText"/></label>
           <label class="f">Thông báo trang chủ<textarea id="announceText"></textarea></label>
@@ -611,7 +560,7 @@ input:focus,select:focus,textarea:focus{outline:3px solid rgba(37,99,235,.12)!im
         p.classList.toggle('active', p.getAttribute('data-panel') === tab);
       });
       const loaders = {
-        dash: loadDash, history: loadAllHistory, bank: loadBank, games: loadGames, system: loadSystem,
+        dash: loadDash, bank: loadBank, games: loadGames, system: loadSystem,
         keys: loadKeys, plans: loadPlans, orders: loadOrders, requests: loadRequests,
         users: loadUsers, logs: loadLogs
       };
@@ -624,7 +573,6 @@ input:focus,select:focus,textarea:focus{outline:3px solid rgba(37,99,235,.12)!im
     try {
       const r = await api('/api/admin/stats');
       const games = r.games || {};
-      lastStatsGames = games;
       const ids = Object.keys(games);
       let totalAcc = 0, nAcc = 0;
       ids.forEach((id) => {
@@ -661,99 +609,9 @@ input:focus,select:focus,textarea:focus{outline:3px solid rgba(37,99,235,.12)!im
           } catch (e) { toast(e.message, 1); }
         };
       });
-      await refreshDashTrend(ids);
     } catch (e) { toast(e.message, 1); }
   }
   $('btnRefreshDash').onclick = loadDash;
-  $('btnRefreshTrend').onclick = () => refreshDashTrend(Object.keys(lastStatsGames || {}));
-  $('dashTrendGame').onchange = () => refreshDashTrend(Object.keys(lastStatsGames || {}));
-
-  // Chart helpers: display observed history only; never fabricate missing outcomes.
-  let lastStatsGames = {};
-  let dashTrendTimer = null;
-  function classifyResult(row) {
-    const sum = Number(row && (row.sum ?? row.total ?? row.score));
-    if (Number.isFinite(sum) && sum > 0) return { side: sum > 10 ? 'T' : 'X', label: String(sum), value: sum };
-    const raw = row && (row.char ?? row.result ?? row.actual ?? row.outcome ?? row.side ?? row.prediction ?? row.value);
-    const txt = String(raw ?? '').trim().toUpperCase();
-    if (/^(T|TAI|BIG|BANKER)$/.test(txt)) return { side: 'T', label: 'TÀI', value: 1 };
-    if (/^(X|XIU|SMALL|PLAYER)$/.test(txt)) return { side: 'X', label: 'XỈU', value: -1 };
-    if (txt) return { side: 'O', label: txt.slice(0, 4), value: Number.isFinite(Number(txt)) ? Number(txt) : null };
-    return { side: '?', label: '—', value: null };
-  }
-  function historyRowsForChart(rows) {
-    return (Array.isArray(rows) ? rows.slice().reverse() : []).map((row, i) => {
-      const c = classifyResult(row); return { row, i, ...c, session: row.session ?? row.phien ?? row.issue ?? '—' };
-    });
-  }
-  function drawLineChart(canvas, points, opts = {}) {
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d'); if (!ctx) return;
-    const box = canvas.getBoundingClientRect(); const w = Math.max(300, box.width || 600); const h = Math.max(120, box.height || 210); const dpr = Math.min(2, window.devicePixelRatio || 1);
-    canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr); ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,w,h);
-    const pad = { l: 28, r: 16, t: 18, b: 24 }, cw = w-pad.l-pad.r, ch=h-pad.t-pad.b;
-    ctx.strokeStyle = 'rgba(148,163,184,.22)'; ctx.lineWidth=1;
-    for(let i=0;i<5;i++){const y=pad.t+ch*i/4;ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(w-pad.r,y);ctx.stroke();}
-    const valid = points.filter(p => Number.isFinite(p.value));
-    if(valid.length<2){ctx.fillStyle='#64748b';ctx.font='12px system-ui';ctx.fillText('Chưa đủ dữ liệu kết quả để vẽ đường xu hướng',pad.l+8,h/2);return;}
-    let min=Math.min(...valid.map(p=>p.value)),max=Math.max(...valid.map(p=>p.value)); if(min===max){min-=1;max+=1;} const span=max-min;
-    const coords=valid.map((p,i)=>({x:pad.l+(valid.length===1?0:i/(valid.length-1))*cw,y:pad.t+(max-p.value)/span*ch,p}));
-    const grad=ctx.createLinearGradient(0,pad.t,0,h-pad.b);grad.addColorStop(0,'rgba(37,99,235,.22)');grad.addColorStop(1,'rgba(37,99,235,0)');
-    ctx.beginPath();coords.forEach((q,i)=>i?ctx.lineTo(q.x,q.y):ctx.moveTo(q.x,q.y));ctx.lineTo(coords[coords.length-1].x,h-pad.b);ctx.lineTo(coords[0].x,h-pad.b);ctx.closePath();ctx.fillStyle=grad;ctx.fill();
-    let pathLen=0;for(let i=1;i<coords.length;i++)pathLen+=Math.hypot(coords[i].x-coords[i-1].x,coords[i].y-coords[i-1].y);
-    const started=performance.now();
-    const drawAnimatedLine=(now)=>{const progress=Math.min(1,(now-started)/520);ctx.beginPath();coords.forEach((q,i)=>i?ctx.lineTo(q.x,q.y):ctx.moveTo(q.x,q.y));ctx.lineWidth=2.6;ctx.strokeStyle='#2563eb';ctx.lineJoin='round';ctx.lineCap='round';ctx.setLineDash([Math.max(1,pathLen)]);ctx.lineDashOffset=pathLen*(1-progress);ctx.stroke();ctx.setLineDash([]);ctx.lineDashOffset=0;if(progress<1)requestAnimationFrame(drawAnimatedLine);else coords.forEach((q,i)=>{ctx.beginPath();ctx.arc(q.x,q.y,i===coords.length-1?4:2.2,0,Math.PI*2);ctx.fillStyle=q.p.side==='T'?'#0d9488':q.p.side==='X'?'#e11d48':'#2563eb';ctx.fill();});};
-    requestAnimationFrame(drawAnimatedLine);
-    ctx.fillStyle='#64748b';ctx.font='10px system-ui';ctx.fillText(String(valid[0].p?.session ?? ''),pad.l,h-7);ctx.textAlign='right';ctx.fillText(String(valid[valid.length-1].p?.session ?? ''),w-pad.r,h-7);ctx.textAlign='left';
-  }
-  function renderRoad(rows, maxCells) {
-    const items = historyRowsForChart(rows).slice(-Math.max(1, maxCells || 500));
-    if(!items.length) return '<div class="history-empty">Chưa có lịch sử kết quả cho bàn này.</div>';
-    const cells=items.map((x)=>`<div class="road-cell ${x.side==='T'?'t':x.side==='X'?'x':x.side==='O'?'other':''}" title="Phiên ${esc(x.session)} · ${esc(x.label)}">${esc(x.side==='T'?'T':x.side==='X'?'X':x.label)}</div>`).join('');
-    return `<div class="road-wrap"><div class="road-grid">${cells}</div></div>`;
-  }
-  async function refreshDashTrend(ids) {
-    try {
-      if (!Object.keys(lastStatsGames).length && ids && ids.length) lastStatsGames = Object.fromEntries(ids.map(id=>[id,{}]));
-      const gameSel=$('dashTrendGame'); const keys=Object.keys(lastStatsGames || {});
-      const old=gameSel.value; gameSel.innerHTML=keys.map(id=>`<option value="${esc(id)}">${esc((lastStatsGames[id]&&lastStatsGames[id].label)||id)}</option>`).join('') || '<option value="">Chưa có game</option>';
-      if(keys.includes(old)) gameSel.value=old; else if(keys.length) gameSel.value=keys[0];
-      const id=gameSel.value; if(!id){$('dashTrendMetrics').textContent='Chưa có game để hiển thị.';return;}
-      const [hr,ar]=await Promise.all([api('/api/admin/history?game='+encodeURIComponent(id)+'&limit=300'),api('/api/admin/accuracy?game='+encodeURIComponent(id)+'&limit=300')]);
-      const rows=hr.history||[]; const pts=historyRowsForChart(rows).map(x=>({value:x.value,side:x.side,session:x.session}));
-      drawLineChart($('dashTrendCanvas'),pts);
-      const correct=Number(ar.correct)||0,total=Number(ar.total)||0,accuracy=total?((correct/total)*100).toFixed(1)+'%':'Chưa đủ mẫu';
-      const latest=rows[0]||{};const cl=classifyResult(latest);
-      $('dashTrendMetrics').innerHTML=`<span>Game: ${esc(lastStatsGames[id]?.label||id)}</span><span>Phiên mới: ${esc(latest.session??'—')}</span><span>Kết quả gần: ${esc(cl.label)}</span><span>Lịch sử: ${rows.length} phiên</span><span>Độ chính xác đã chấm: ${esc(accuracy)} (${correct}/${total})</span>`;
-    } catch(e){ $('dashTrendMetrics').textContent='Không tải được biểu đồ: '+e.message; }
-  }
-  window.addEventListener('resize',()=>{ if($('app').classList.contains('on') && document.querySelector('[data-panel="dash"]').classList.contains('active')) refreshDashTrend(Object.keys(lastStatsGames||{})); });
-
-  // ——— Lịch sử & cầu toàn bộ game ———
-  async function loadAllHistory() {
-    const host=$('allGameHistory'); if(!host) return;
-    host.innerHTML='<div class="card"><p class="hint">Đang tải lịch sử các bàn…</p></div>';
-    try {
-      const stats=await api('/api/admin/stats'); lastStatsGames=stats.games||{};
-      const selector=$('historyGame'), old=selector.value||'all';
-      selector.innerHTML='<option value="all">Tất cả game</option>'+Object.keys(lastStatsGames).map(id=>`<option value="${esc(id)}">${esc(lastStatsGames[id].label||id)}</option>`).join('');
-      selector.value=Object.prototype.hasOwnProperty.call(lastStatsGames,old)||old==='all'?old:'all';
-      const ids=selector.value==='all'?Object.keys(lastStatsGames):[selector.value];
-      if(!ids.length){host.innerHTML='<div class="history-empty">Server chưa có game nào được cấu hình.</div>';return;}
-      const limit=Number($('historyLimit').value)||500, view=$('historyView').value;
-      const results=await Promise.all(ids.map(async id=>{try{const [h,a]=await Promise.all([api('/api/admin/history?game='+encodeURIComponent(id)+'&limit='+limit),api('/api/admin/accuracy?game='+encodeURIComponent(id)+'&limit='+Math.min(10000,limit))]);return {id,meta:lastStatsGames[id]||{},history:h.history||[],accuracy:a};}catch(e){return {id,meta:lastStatsGames[id]||{},history:[],accuracy:null,error:e.message};}}));
-      const total=results.reduce((n,g)=>n+g.history.length,0); $('historySummary').textContent=`Đang xem ${results.length} game · ${total.toLocaleString('vi-VN')} kết quả lịch sử · Mỗi bàn hiển thị kết quả theo thứ tự cũ → mới trong biểu đồ cầu.`;
-      host.innerHTML=results.map((g,i)=>{
-        const rows=g.history||[], acc=g.accuracy||{}, correct=Number(acc.correct)||0, scored=Number(acc.total)||0;
-        const chart=view==='road'?'':`<div class="history-chart"><canvas id="histChart_${i}" aria-label="Biểu đồ ${esc(g.meta.label||g.id)}"></canvas></div>`;
-        const road=view==='table'?'':renderRoad(rows,limit);
-        const table=view==='road'?'':`<div class="history-table-wrap"><table><thead><tr><th>Phiên</th><th>Kết quả</th><th>Tổng / vị</th><th>Dự đoán</th><th>Đánh giá</th><th>Thời gian</th></tr></thead><tbody>${rows.slice(0,150).map(r=>{const c=classifyResult(r);const ar=(acc.history||[]).find(x=>String(x.session??x.phien)===String(r.session??r.phien));const pred=ar&&(ar.predicted||ar.pred||ar.prediction);const ok=ar&&(typeof ar.isCorrect==='boolean'?ar.isCorrect:typeof ar.hit==='boolean'?ar.hit:typeof ar.correct==='boolean'?ar.correct:null);return `<tr><td><code>${esc(r.session??r.phien??'—')}</code></td><td><b>${esc(c.label)}</b></td><td>${esc(r.sum??r.total??(Array.isArray(r.dice)?r.dice.join('-'):'—'))}</td><td>${esc(pred||'—')}</td><td class="${ok===true?'history-pred-hit':ok===false?'history-pred-miss':''}">${ok===true?'Đúng':ok===false?'Sai':ar&&ar.skipped?'Bỏ qua':'Chưa chấm'}</td><td>${esc(fmtTime(r.ts||r.time))}</td></tr>`}).join('')||'<tr><td colspan="6" class="empty">Chưa có dữ liệu</td></tr>'}</tbody></table></div>`;
-        return `<article class="history-game-card"><div class="history-game-head"><div><h3>${esc(g.meta.label||g.id)} <code>${esc(g.id)}</code></h3><div class="history-meta">${g.meta.enabled===false?'OFF':'LIVE'} · ${rows.length} kết quả · Đã chấm ${correct}/${scored} ${scored?'('+((correct/scored)*100).toFixed(1)+'%)':''}</div></div><span class="pill ${g.meta.enabled===false?'off':'live'}">${g.meta.enabled===false?'TẮT':'ĐANG CHẠY'}</span></div>${g.error?`<div class="history-empty">${esc(g.error)}</div>`:''}${road}${chart}${table}</article>`;
-      }).join('');
-      results.forEach((g,i)=>{if(view!=='road')drawLineChart($('histChart_'+i),historyRowsForChart(g.history).map(x=>({value:x.value,side:x.side,session:x.session})));});
-    } catch(e){host.innerHTML=`<div class="history-empty">Không tải được lịch sử: ${esc(e.message)}</div>`;toast(e.message,1);}
-  }
-  $('btnRefreshAllHistory').onclick=loadAllHistory; $('historyGame').onchange=loadAllHistory; $('historyLimit').onchange=loadAllHistory; $('historyView').onchange=loadAllHistory;
 
   // ——— Ngân hàng ———
   async function loadSettingsRaw() {
@@ -967,7 +825,6 @@ input:focus,select:focus,textarea:focus{outline:3px solid rgba(37,99,235,.12)!im
       const s = await loadSettingsRaw();
       const set = (id, v) => { if ($(id)) $(id).value = v ?? ''; };
       set('getkeyv2MaxPerDay', s.getkeyv2MaxPerDay ?? 2);
-      set('getkeyv2KeyHours', s.getkeyv2KeyHours ?? 18);
       set('getkeyv2LinkMinutes', s.getkeyv2LinkMinutes ?? 5);
       set('indexKeyMinutes', s.indexKeyMinutes ?? 30);
       set('link4mBaseUrl', s.link4mBaseUrl ?? 'https://link4m.co/api-shorten/v2');
@@ -1009,7 +866,6 @@ input:focus,select:focus,textarea:focus{outline:3px solid rgba(37,99,235,.12)!im
       const split = (id) => $(id).value.split(/[,，]/).map((x) => x.trim()).filter(Boolean);
       await saveSettingsPatch({
         getkeyv2MaxPerDay: num('getkeyv2MaxPerDay', 2),
-        getkeyv2KeyHours: num('getkeyv2KeyHours', 18),
         getkeyv2LinkMinutes: num('getkeyv2LinkMinutes', 5),
         indexKeyMinutes: num('indexKeyMinutes', 30),
         link4mBaseUrl: $('link4mBaseUrl').value.trim(),
@@ -1249,7 +1105,7 @@ input:focus,select:focus,textarea:focus{outline:3px solid rgba(37,99,235,.12)!im
         const actions = (req.proofAttached || req.proofCount) ? `<button class="btn sm" data-proof="${esc(req.id)}">Xem ảnh${req.proofCount > 1 ? ' (' + req.proofCount + ')' : ''}</button> ` : '';
         const reviewActions = st === 'pending'
           ? `<button class="btn ok sm" data-ok="${esc(req.id)}">Duyệt</button> <button class="btn bad sm" data-no="${esc(req.id)}">Từ chối</button>` : '—';
-        const typeLabel = ({payment:'Bill mua key',trial:'Dùng thử 15 phút',feedback:'Chia sẻ user',reset:'Reset',group:'Nhiệm vụ'})[req.type] || req.type || '';
+        const typeLabel = ({payment:'Bill mua key',trial:'Dùng thử 15 phút',feedback:'Góp ý',reset:'Reset',group:'Nhiệm vụ'})[req.type] || req.type || '';
         return `<tr>
           <td><code>${esc(req.id)}</code></td>
           <td>${esc(typeLabel)}${req.caption ? '<br><small>'+esc(req.caption)+'</small>' : ''}</td>
@@ -1307,10 +1163,6 @@ input:focus,select:focus,textarea:focus{outline:3px solid rgba(37,99,235,.12)!im
     } catch (e) { toast(e.message, 1); }
   }
   $('btnRefreshLogs').onclick = loadLogs;
-
-  // Refresh dashboard trend gently while admin is logged in and dashboard is visible.
-  if (dashTrendTimer) clearInterval(dashTrendTimer);
-  dashTrendTimer = setInterval(() => { if (token && $('app').classList.contains('on') && document.querySelector('[data-panel="dash"]').classList.contains('active')) refreshDashTrend(Object.keys(lastStatsGames||{})); }, 20000);
 
   // Auto session
   if (token) showApp();
