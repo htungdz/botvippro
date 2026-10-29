@@ -1020,82 +1020,82 @@ function startTelegramBot(options) {
   const fmt = n => Number(n || 0).toLocaleString('vi-VN');
   const ensureHttps = u => { let s = String(u || '').trim(); if (!s) return ''; s = s.replace(/^http:\/\//i, 'https://'); if (!/^https:\/\//i.test(s)) s = 'https://' + s; try { const x = new URL(s); if (['localhost','127.0.0.1','::1'].includes(x.hostname.toLowerCase()) || x.hostname.toLowerCase().endsWith('.local')) return ''; return x.origin.replace(/\/+$/, ''); } catch (_) { return ''; } };
 
-  // ─── USER MENU: command-first, no inline option keyboard ───────────────
+  // ─── USER MENU (command only, no buttons) ───────────────
   async function showStart(chatId, name, from) {
+    const base = ensureHttps(process.env.PUBLIC_URL || process.env.WEB_URL || '');
     const admin = isAdmin(from && from.id);
-    if (!admin) return showUserMenu(chatId);
-    const text = `╔════════════════════════════╗
-║  <b>TOOLTUNGTUNG · ADMIN</b>  ║
-╚════════════════════════════╝
-
-👋 Xin chào <b>${esc(name)}</b>
-
-🛠 Quản lý key, bảng giá, game, API, đơn hàng và góp ý tại Index Admin.
-🌐 https://botvippro-production-0b00.up.railway.app/admin
-
-💬 Hỗ trợ: <b>@SunNetWin</b>`;
-    return send(chatId, text);
+    let text = '';
+    text += '╔══════════════════════════╗\n';
+    text += '║   <b>ToolTungTung</b>   ║\n';
+    text += '║     <b>CÔNG CỤ DỰ ĐOÁN</b>     ║\n';
+    text += '╚══════════════════════════╝\n\n';
+    text += '👋 Xin chào <b>' + esc(name) + '</b>\n\n';
+    if (admin) {
+      text += '🛠 <b>QUẢN TRỊ HỆ THỐNG</b>\n';
+      text += '└─ Quản lý key, giá, game và API trong Index Admin.\n\n';
+    } else {
+      text += '🎮 <b>TOOL DỰ ĐOÁN</b>\n';
+      text += '├─ 🎁 Key dùng thử: /getkeyv1\n';
+      text += '├─ 💎 Mua key: /muakeytx\n';
+      text += '└─ 🔑 Xem key: /mykey\n\n';
+    }
+    text += '━━━━━━━━━━━━━━━━━━━━━━━━\n';
+    text += '💬 Hỗ trợ: <b>@SunNetWin</b>';
+    if (!base) {
+      text += '\n\nTrang công cụ hiện chưa mở được. Vui lòng thử lại sau hoặc liên hệ @SunNetWin.';
+    } else {
+      text += '\n\n🌐 Trang công cụ: ' + '<a href=\"' + esc(base.endsWith('.html') ? base : base + '/') + '\">Mở trang web</a>';
+    }
+    if (admin) text += '\n🛠 Trang Admin: <a href=\"https://botvippro-production-0b00.up.railway.app/admin\">Mở Admin</a>';
+    await send(chatId, text);
   }
 
   async function showUserMenu(chatId) {
-    // Hướng dẫn dạng khung riêng, thao tác bằng lệnh; không dùng inline option buttons.
-    const cfg = options.getConfig() || {};
-    const needPhotos = Math.max(1, Number(cfg.groupTaskPhotos) || 3);
-    const v2Hours = Math.max(0.25, Number(cfg.getkeyv2KeyHours) || 18);
-    const promo = String(cfg.groupPromoText || '@SunNetWin tool dự đoán TX VIP').trim();
-    const available = (cfg.plans || []).filter(p => p.active !== false && Number(p.price) > 0 && Number(p.durationHours) > 0);
-    const priceLines = available.length ? available.map(p => {
-      const duration = Number(p.durationHours) >= 24 ? `${Math.round(Number(p.durationHours) / 24)} ngày` : `${Number(p.durationHours)} giờ`;
-      return `• <b>${esc(p.label)}</b> — <b>${fmt(p.price)}đ</b> · ${duration} · lệnh <code>/pay ${esc(p.id)}</code>`;
-    }).join('\n') : 'Chưa có gói đang bán. Vui lòng thử lại sau.';
+    // Menu khách hàng: mỗi lệnh nằm trong một blockquote riêng để dễ đọc trên điện thoại.
     const text =
-`📚 <b>HƯỚNG DẪN SỬ DỤNG BOT</b>
-━━━━━━━━━━━━━━━━━━━━
-🔑 <b>/getkey · KEY DÙNG THỬ</b>
-<blockquote>1️⃣ Đăng nội dung giới thiệu vào ${needPhotos} nhóm theo yêu cầu.
-2️⃣ Chụp và gửi đủ ${needPhotos} ảnh cho bot.
-3️⃣ Chờ Admin duyệt; key 15 phút sẽ được gửi sau khi duyệt.
+`🎵 <b>LỆNH TOOL TUNGTUNG</b>
+<i>Chọn lệnh cần dùng. Các lệnh dưới đây dành cho khách hàng.</i>
 
-📋 <b>Nội dung mẫu:</b>
-<code>${esc(promo)}</code>
-📌 Gõ: <code>/getkey</code></blockquote>
+<blockquote>🎁 <b>/getkeyv1</b> — Nhận key dùng thử
+Gửi ảnh hoàn thành nhiệm vụ quảng bá. Key chỉ được cấp sau khi Admin duyệt.
+⏱ Thời hạn key: 15 phút (nếu gói nhiệm vụ đang bật).</blockquote>
 
-🔗 <b>/getkeyv2 · NHẬN KEY QUA LINK4M</b>
-<blockquote>1️⃣ Gõ lệnh và mở link rút gọn bot gửi.
-2️⃣ Hoàn thành bước xác nhận trên trang Link4M.
-3️⃣ Lấy key tại trang xác nhận; nếu cần, gõ <code>done</code>.
-⏱ Thời hạn key hiện tại: <b>${v2Hours} giờ</b>.
-📌 Gõ: <code>/getkeyv2</code></blockquote>
+<blockquote>🔗 <b>/getkeyv2</b> — Nhận key qua Link4M
+Mở liên kết bot gửi, hoàn thành bước xác nhận rồi lấy key ở trang kết quả.
+📌 Ví dụ: <code>/getkeyv2</code></blockquote>
 
-💳 <b>/muakeytx · BẢNG GIÁ KEY</b>
-<blockquote>${priceLines}
+<blockquote>🔐 <b>/nhapkey KEY</b> — Kích hoạt key
+Liên kết key với tài khoản Telegram và nhận nút mở Index.
+📌 Ví dụ: <code>/nhapkey TTU-XXXX-XXXX</code></blockquote>
 
-Để mua, gõ <code>/pay MÃ_GÓI</code> theo mã ở trên. Sau khi thanh toán, gửi bill theo hướng dẫn; key được cấp sau khi xác nhận.
-📌 Gõ: <code>/muakeytx</code></blockquote>
+<blockquote>💎 <b>/muakeytx</b> — Xem bảng giá
+Chọn gói, xem số tiền và hướng dẫn thanh toán. Sau khi thanh toán, gửi bill theo hướng dẫn trong bot.</blockquote>
 
-🔐 <b>/nhapkey KEY</b>
-<blockquote>Liên kết key với Telegram và nhận hướng dẫn mở Index.
-Ví dụ: <code>/nhapkey ABCD-1234</code></blockquote>
+<blockquote>🪪 <b>/mykey</b> — Key của tôi
+Kiểm tra trạng thái key đã liên kết và thời gian còn lại.</blockquote>
 
-🪪 <b>/mykey</b>
-<blockquote>Xem key đã liên kết và thời gian còn lại.</blockquote>
-
-🎵 <b>LỆNH TIKTOK</b>
-<blockquote><b>/infotiktok username</b> — Xem thông tin kênh.
+<blockquote>📱 <b>/infotiktok {username}</b> — Thông tin kênh TikTok
 Ví dụ: <code>/infotiktok ngth.2010</code>
 ⏳ Cooldown: 30 giây.</blockquote>
-<blockquote><b>/videotiktok link hoặc id</b> — Xem thông tin video.
+
+<blockquote>🎬 <b>/videotiktok {link}</b> — Thông tin video TikTok
 Ví dụ: <code>/videotiktok https://www.tiktok.com/@tiktok/video/7231338487075638570</code>
 ⏳ Cooldown: 30 giây.</blockquote>
 
-🏆 <b>/feedback</b>
-<blockquote>Bước 1: gửi ảnh chụp kết quả/trải nghiệm.
-Bước 2: gửi ghi chú ở tin nhắn tiếp theo.
-Bot tự đính kèm tên, username và Telegram ID. Admin duyệt rồi mới đăng lên kênh.</blockquote>
-❌ <b>/cancel</b> — Hủy thao tác đang thực hiện.
+<blockquote>📝 <b>/feedback</b> — Gửi góp ý
+Gửi nội dung góp ý kèm ảnh minh chứng nếu có. Yêu cầu sẽ được chuyển Admin duyệt.</blockquote>
+
+<blockquote>❌ <b>/cancel</b> — Hủy thao tác hiện tại
+Dùng khi muốn dừng bước nhận key hoặc thanh toán đang thực hiện.</blockquote>
 
 💬 Hỗ trợ: <b>@SunNetWin</b>`;
-    return send(chatId, text);
+    await send(chatId, text, {
+      reply_markup: { inline_keyboard: [
+        [{ text: '💎 Bảng giá', callback_data: 'buy_menu' }, { text: '🔗 Getkey V2', callback_data: 'cmd:getkeyv2' }],
+        [{ text: '🎁 Key dùng thử', callback_data: 'cmd:getkey' }, { text: '🔑 Key của tôi', callback_data: 'cmd:mykey' }],
+        [{ text: '📝 Gửi góp ý', callback_data: 'cmd:feedback' }]
+      ] }
+    });
   }
 
   async function sendHelpAdmin(chatId, page) {
@@ -1269,7 +1269,7 @@ Bot tự đính kèm tên, username và Telegram ID. Admin duyệt rồi mới �
     const planText = request.type === 'payment'
       ? `💎 ${esc(request.planLabel)} · ${fmt(request.price)}đ · ${request.durationHours}h`
       : request.type === 'reset' ? '🔄 Reset thiết bị'
-      : request.type === 'feedback' ? '🏆 Chia sẻ trải nghiệm người dùng'
+      : request.type === 'feedback' ? '📝 Góp ý người dùng'
       : request.type === 'trial' ? '🎁 Duyệt key dùng thử · 15 phút' : '🎁 Key free (nhiệm vụ)';
     let profileBlock = '';
     try {
@@ -1363,8 +1363,8 @@ Bấm nút duyệt / từ chối:`;
     const userId = String(from.id);
     const sessions = options.getSessions();
     const session = sessions[userId];
-    if (!session || (session.type !== mode && !(mode === 'feedback' && session.type === 'feedback_photo'))) {
-      await send(message.chat.id, '⚠️ Gõ /getkey, /muakeytx hoặc /feedback trước khi gửi ảnh.');
+    if (!session || session.type !== mode) {
+      await send(message.chat.id, '⚠️ Gõ /getkeyv1 hoặc /muakeytx trước khi gửi ảnh.');
       return;
     }
     const photos = message.photo || [];
@@ -1378,20 +1378,25 @@ Bấm nút duyệt / từ chối:`;
     // Timeout check for group task
     if (mode === 'group' && session.startedAt && (Date.now() - session.startedAt) > timeoutSec * 1000) {
       delete sessions[userId]; options.saveSessions(sessions);
-      await send(message.chat.id, `⏰ Hết ${timeoutSec} giây. Gõ /getkey để làm lại.`);
+      await send(message.chat.id, `⏰ Hết ${timeoutSec} giây. Gõ /getkeyv1 để làm lại.`);
       return;
     }
 
     if (mode === 'feedback') {
-      // Bước 1: chỉ nhận ảnh. Ghi chú được thu ở tin nhắn tiếp theo để trải nghiệm rõ ràng hơn.
-      const photoUniqueId = String(photos[photos.length - 1].file_unique_id || fileId);
-      sessions[userId] = {
-        type: 'feedback_note', startedAt: session.startedAt || Date.now(),
-        proofFileId: fileId, proofFileIds: [fileId], photoUniqueId,
-        telegramId: userId, username: from.username || '', userName: displayName(from)
+      if (!caption || caption.length < 5) {
+        await send(message.chat.id, 'Bạn hãy gửi một ảnh kèm nội dung góp ý trong phần chú thích ảnh (ít nhất 5 ký tự).');
+        return;
+      }
+      const request = {
+        id: idShort(), type: 'feedback', status: 'pending',
+        telegramId: userId, username: from.username || '', userName: displayName(from),
+        caption: caption.slice(0, 1500), proofFileId: fileId, proofFileIds: [fileId],
+        createdAt: Date.now()
       };
-      options.saveSessions(sessions);
-      await send(message.chat.id, '✅ <b>BƯỚC 1/2 · ĐÃ NHẬN ẢNH</b>\n\n📝 <b>BƯỚC 2/2 · GỬI GHI CHÚ</b>\nHãy gửi một tin nhắn ngắn mô tả trải nghiệm hoặc kết quả bạn muốn chia sẻ. Ví dụ: “Mình thích phần lịch sử theo phiên, dễ theo dõi hơn.”\n\n👤 Bot sẽ đính kèm tên và tài khoản Telegram của bạn để Admin xác minh. Bài chỉ đăng lên kênh sau khi được duyệt.\n❌ Gõ /cancel để hủy.');
+      options.addRequest(request);
+      delete sessions[userId]; options.saveSessions(sessions);
+      await send(message.chat.id, `✅ Đã nhận góp ý #${request.id}. Admin sẽ xem ảnh và nội dung trước khi đăng.`);
+      await notifyAdmins(request, fileId);
       return;
     }
 
@@ -1534,7 +1539,7 @@ ${promo ? `📌 <b>Câu cần sao chép:</b>\n<code>${esc(promo)}</code>\n` : ''
     const cfg = options.getConfig() || {};
     const maxPerDay = Number(cfg.getkeyv2MaxPerDay) || 2;
     const linkTtlMin = Number(cfg.getkeyv2LinkMinutes) || 5;
-    const keyTtlHours = Number(cfg.getkeyv2KeyHours) || 18;
+    const keyTtlMin = Number(cfg.indexKeyMinutes) || 30;
     const day = bangkokDayKey();
     const uid = String(fromId);
     let rec = getkeyv2Uses[uid];
@@ -1617,7 +1622,7 @@ ${esc(shortLink)}
 Hệ thống <b>tự biết</b> khi bạn vượt xong (mở trang xác nhận) và gửi key tại đây.
 
 Nếu đã vượt mà chưa thấy key: gõ <code>done</code>.
-⏳ Link hiệu lực <b>${linkTtlMin} phút</b> · Key sống <b>${keyTtlHours} giờ</b>
+⏳ Còn <b>${linkTtlMin} phút</b> · Key sống <b>${keyTtlMin} phút</b>
 ━━━━━━━━━━━━━━━━━━━━
 @SunNetWin`);
   }
@@ -1650,7 +1655,7 @@ Nếu đã vượt mà chưa thấy key: gõ <code>done</code>.
     }
     const cfg = options.getConfig() || {};
     const maxPerDay = Number(cfg.getkeyv2MaxPerDay) || 2;
-    const keyTtlHours = Number(cfg.getkeyv2KeyHours) || 18;
+    const keyTtlMin = Number(cfg.indexKeyMinutes) || 30;
     const day = bangkokDayKey();
     let rec = getkeyv2Uses[uid];
     if (!rec || rec.day !== day) {
@@ -1667,8 +1672,8 @@ Nếu đã vượt mà chưa thấy key: gõ <code>done</code>.
     try {
       if (typeof options.createKey === 'function') {
         const issued = options.createKey({
-          label: `Index Key · ${keyTtlHours}h · TG ${uid}`,
-          durationHours: keyTtlHours,
+          label: `Index Key · ${keyTtlMin}p · TG ${uid}`,
+          durationHours: Math.max(0.25, keyTtlMin / 60),
           deviceLimit: 1,
           source: 'getkeyv2',
           telegramId: uid
@@ -1685,8 +1690,8 @@ Nếu đã vượt mà chưa thấy key: gõ <code>done</code>.
         if (typeof options.createKey === 'function') {
           const issued2 = options.createKey({
             key: plainKey,
-            label: `Index Key · ${keyTtlHours}h · TG ${uid}`,
-            durationHours: keyTtlHours,
+            label: `Index Key · ${keyTtlMin}p · TG ${uid}`,
+            durationHours: Math.max(0.25, keyTtlMin / 60),
             deviceLimit: 1,
             source: 'getkeyv2-idx',
             telegramId: uid
@@ -1697,7 +1702,7 @@ Nếu đã vượt mà chưa thấy key: gõ <code>done</code>.
     }
 
     // Đăng ký Index Key map (auth cũng nhận IDX-...)
-    const expiresAt = Date.now() + keyTtlHours * 60 * 60 * 1000;
+    const expiresAt = Date.now() + keyTtlMin * 60 * 1000;
     indexKeys[indexKey] = {
       telegramId: uid,
       createdAt: Date.now(),
@@ -1742,7 +1747,7 @@ Nếu đã vượt mà chưa thấy key: gõ <code>done</code>.
 
 <code>${esc(plainKey)}</code>
 
-⏱ Hết hạn: <b>${keyTtlHours} giờ</b> · 1 thiết bị
+⏱ Hết hạn: <b>${keyTtlMin} phút</b> · 1 thiết bị
 
 📋 <b>Cách vào Index:</b>
 1. Bấm <b>📋 Sao chép Key</b> (hoặc giữ dòng key ở trên)
@@ -2820,13 +2825,19 @@ async function lookupInstagram(input) {
 
   async function showBuyMenu(chatId) {
     const available = plans();
-    if (!available.length) return send(chatId, '📭 Hiện chưa có gói key đang bán. Vui lòng quay lại sau hoặc liên hệ @SunNetWin.');
-    const rows = available.map(p => {
-      const hours = Number(p.durationHours) || 0;
-      const duration = hours >= 24 ? `${Math.round(hours / 24)} ngày` : `${hours} giờ`;
-      return `╭ <b>${esc(p.label)}</b>${p.hot ? ' · 🔥 PHỔ BIẾN' : ''}\n├ Giá: <b>${fmt(p.price)}đ</b>\n├ Thời hạn: ${duration} · Thiết bị: ${Number(p.deviceLimit) || 1}\n╰ Mua bằng lệnh: <code>/pay ${esc(p.id)}</code>`;
-    });
-    return send(chatId, `💳 <b>BẢNG GIÁ KEY TOOLTUNGTUNG</b>\n━━━━━━━━━━━━━━━━━━━━\n\n${rows.join('\n\n')}\n\nSau khi tạo thanh toán, làm theo hướng dẫn và gửi bill trong chat này.\n💬 Hỗ trợ: @SunNetWin`);
+    if (!available.length) return send(chatId, '📭 Tạm hết gói.\n/getkeyv1 hoặc /getkeyv2 nhận free · @SunNetWin');
+    // UI mới: chỉ 1 dòng chào + "Đây là bảng giá key bên tui" + inline buttons, không thêm giải thích
+    const keyboard = {
+      inline_keyboard: available.map(p => {
+        const days = p.durationHours >= 24 ? (Math.round(p.durationHours / 24) + ' Ngày') : (p.durationHours + 'h');
+        return [{ text: `${fmt(p.price)}đ - ${days}`, callback_data: 'pay:' + p.id }];
+      })
+    };
+    await send(chatId,
+      '👋 Xin chào!\n' +
+      '<b>Đây là bảng giá key bên tui</b>',
+      { reply_markup: keyboard }
+    );
   }
 
   async function startPayment(chatId, fromId, planId) {
@@ -2857,22 +2868,29 @@ async function lookupInstagram(input) {
     } catch (e) {}
     const qr = buildVietQr(plan.price, orderId) || (`https://img.vietqr.io/image/${encodeURIComponent(config.bankCode)}-${encodeURIComponent(config.bankAccount)}-compact2.jpg?amount=${encodeURIComponent(String(plan.price))}&addInfo=${encodeURIComponent(orderId)}&accountName=${encodeURIComponent(config.bankAccountName)}`);
     const days = plan.durationHours >= 24 ? `${Math.round(plan.durationHours / 24)} ngày` : `${plan.durationHours}h`;
-    const sent = await sendPhoto(chatId, qr, {
-      caption: '<b>TOOLTUNGTUNG · THÔNG TIN THANH TOÁN</b>\n'
-        + '━━━━━━━━━━━━━━━━━━━━\n'
-        + 'Gói: <b>' + esc(plan.label) + '</b>\n'
-        + 'Thời hạn: <b>' + days + '</b>\n'
-        + 'Số tiền: <b>' + fmt(plan.price) + 'đ</b>\n\n'
-        + '<b>NGÂN HÀNG</b> · ' + esc(config.bankCode) + '\n'
-        + '<b>SỐ TÀI KHOẢN</b>\n<code>' + esc(config.bankAccount) + '</code>\n'
-        + '<b>CHỦ TÀI KHOẢN</b>\n' + esc(config.bankAccountName) + '\n\n'
-        + '<b>NỘI DUNG CHUYỂN KHOẢN</b>\n<code>' + orderId + '</code>\n\n'
-        + 'Vui lòng chuyển đúng số tiền và giữ nguyên nội dung trên.\n'
-        + 'Mã QR có hiệu lực <b>' + Math.round(timeoutSec / 60) + ' phút</b>. Sau khi hệ thống xác nhận, key sẽ được gửi qua bot.\n'
-        + '━━━━━━━━━━━━━━━━━━━━\n'
-        + 'Hỗ trợ: @SunNetWin'
-    });
-    const msgId = sent && (sent.result && sent.result.message_id);
+    const paymentCaption = '<b>TOOLTUNGTUNG · THÔNG TIN THANH TOÁN</b>\n'
+      + '━━━━━━━━━━━━━━━━━━━━\n'
+      + 'Gói: <b>' + esc(plan.label) + '</b>\n'
+      + 'Thời hạn: <b>' + days + '</b>\n'
+      + 'Số tiền: <b>' + fmt(plan.price) + 'đ</b>\n\n'
+      + '<b>NGÂN HÀNG</b> · ' + esc(config.bankCode) + '\n'
+      + '<b>SỐ TÀI KHOẢN</b>\n<code>' + esc(config.bankAccount) + '</code>\n'
+      + '<b>CHỦ TÀI KHOẢN</b>\n' + esc(config.bankAccountName) + '\n\n'
+      + '<b>NỘI DUNG CHUYỂN KHOẢN</b>\n<code>' + orderId + '</code>\n\n'
+      + 'Vui lòng chuyển đúng số tiền và giữ nguyên nội dung trên.\n'
+      + 'Mã QR có hiệu lực <b>' + Math.round(timeoutSec / 60) + ' phút</b>. Sau khi hệ thống xác nhận, key sẽ được gửi qua bot.\n'
+      + '━━━━━━━━━━━━━━━━━━━━\n'
+      + 'Hỗ trợ: @SunNetWin';
+    let sent = null;
+    try {
+      sent = await sendPhoto(chatId, qr, { caption: paymentCaption });
+    } catch (qrError) {
+      logLine('[shop] sendPhoto QR failed: ' + String(qrError && qrError.message || qrError).slice(0, 220));
+      const fallback = paymentCaption + '\n\n⚠️ Telegram không tải được ảnh QR tự động. Bấm <a href=\"' + esc(qr) + '\">MỞ MÃ QR CHUYỂN KHOẢN</a> hoặc nhập thông tin chuyển khoản phía trên.';
+      try { sent = await send(chatId, fallback, { disable_web_page_preview: false }); }
+      catch (fallbackError) { logLine('[shop] payment fallback failed: ' + String(fallbackError && fallbackError.message || fallbackError).slice(0, 180)); }
+    }
+    const msgId = sent && sent.message_id;
     if (msgId && typeof orders !== 'undefined') {
       const o = orders.find(x => x.id === orderId);
       if (o) { o.tgMessageId = msgId; o.chatId = String(chatId); if (typeof saveOrders === 'function') saveOrders(); }
@@ -2909,7 +2927,7 @@ async function lookupInstagram(input) {
     if (data === 'cmd:getkeyv2') return startGetkeyV2(chatId, fromId, cq.from);
     if (data === 'cmd:feedback') {
       const sessions = options.getSessions(); sessions[fromId] = { type: 'feedback', startedAt: Date.now() }; options.saveSessions(sessions);
-      return send(chatId, '🏆 <b>CHIA SẺ TRẢI NGHIỆM</b>\n<b>Bước 1/2:</b> Gửi ảnh chụp kết quả hoặc trải nghiệm của bạn.\n<b>Bước 2/2:</b> Sau khi bot nhận ảnh, gửi một tin nhắn ghi chú ngắn (ví dụ: bạn thích tính năng nào hoặc muốn chia sẻ kết quả gì).\n\nBot tự ghi nhận tên, username và Telegram ID để Admin xác minh. Bài chỉ đăng lên kênh sau khi Admin duyệt. Gõ /cancel để hủy.');
+      return send(chatId, '📝 <b>GỬI GÓP Ý</b>\nGửi một ảnh kèm nội dung trong phần chú thích ảnh. Admin sẽ xem trước khi đăng lên kênh.');
     }
     if (data === 'cmd:mykey') {
       // fall through to mykey logic via fake message if needed
@@ -3157,9 +3175,9 @@ async function lookupInstagram(input) {
       const session = sessions[fromId];
       if (session?.type === 'group') return createProofRequest(message, 'group');
       if (session?.type === 'payment') return createProofRequest(message, 'payment');
-      if (session?.type === 'feedback_photo' || session?.type === 'feedback') return createProofRequest(message, 'feedback');
+      if (session?.type === 'feedback') return createProofRequest(message, 'feedback');
       if (session?.type === 'getkeyv2') return completeGetkeyV2(chatId, fromId);
-      return send(chatId, '⚠️ Gõ /getkey, /getkeyv2 hoặc /muakeytx trước.');
+      return send(chatId, '⚠️ Gõ /getkeyv1 hoặc /getkeyv2 hoặc /muakeytx trước.');
     }
 
     if (!text) return;
@@ -3167,7 +3185,7 @@ async function lookupInstagram(input) {
     // Admin commands are web-only. Telegram is reserved for customer key purchase and delivery.
     if (text.startsWith('/') && isAdmin(fromId)) {
       const adminCmd = text.split(/\s+/)[0].toLowerCase().replace(/^\//, '').split('@')[0];
-      const customerCommands = new Set(['start','help','menu','muakeytx','buy','pay','mykey','my_key','getkey','getkeyv1','getkeyv2','nhapkey','activate','feedback','infotiktok','videotiktok','cancel','support','hotro','done','id','myid']);
+      const customerCommands = new Set(['start','help','muakeytx','buy','mykey','getkeyv1','getkey','cancel']);
       if (!customerCommands.has(adminCmd)) return send(chatId, '🛠 Quản lý đã chuyển sang Index Admin: https://botvippro-production-0b00.up.railway.app/');
     }
 
@@ -3176,34 +3194,9 @@ async function lookupInstagram(input) {
     const args = parts.slice(1);
     const argText = text.replace(/^\/\S+\s*/, '').trim();
 
-    if (cmd === 'cancel' && sessions[fromId]) {
-      delete sessions[fromId]; options.saveSessions(sessions);
-      return send(chatId, 'Đã hủy thao tác hiện tại. Nếu muốn gửi bài chia sẻ mới, gõ /feedback.');
-    }
-
-    // Feedback showcase — bước 2: nhận ghi chú riêng sau ảnh, lưu danh tính và chờ Admin duyệt.
-    if (sessions[fromId]?.type === 'feedback_note') {
-      const note = text.trim();
-      if (note.length < 5) return send(chatId, 'Ghi chú hơi ngắn. Hãy viết ít nhất 5 ký tự, hoặc gõ /cancel để hủy.');
-      const pending = sessions[fromId];
-      const request = {
-        id: idShort(), type: 'feedback', status: 'pending',
-        telegramId: fromId, username: from.username || pending.username || '',
-        userName: displayName(from) || pending.userName || 'Người dùng',
-        caption: note.slice(0, 1500), proofFileId: pending.proofFileId,
-        proofFileIds: (pending.proofFileIds || [pending.proofFileId]).filter(Boolean).slice(0, 10),
-        shareType: 'user_testimonial', createdAt: Date.now()
-      };
-      options.addRequest(request);
-      delete sessions[fromId]; options.saveSessions(sessions);
-      await send(chatId, `✅ <b>ĐÃ GỬI BÀI CHIA SẺ</b>\nMã yêu cầu: <code>#${request.id}</code>\n\nAdmin sẽ kiểm tra ảnh và ghi chú trước khi đăng. Bạn sẽ nhận tin nhắn khi yêu cầu được duyệt.`);
-      await notifyAdmins(request, request.proofFileId);
-      return;
-    }
-
     // Bot chỉ là Key Center; mọi cấu hình/quản trị nằm trong Index Admin.
     // Also allow TikTok lookup + getkeyv2 + done
-    const keyCenterCommands = new Set(['start','menu','help','getkey','getkeyv1','getkeyv2','nhapkey','activate','muakeytx','buy','pay','mykey','my_key','cancel','support','hotro','feedback','infotiktok','videotiktok','done']);
+    const keyCenterCommands = new Set(['start','menu','help','getkeyv1','getkey','getkeyv2','nhapkey','activate','muakeytx','buy','pay','mykey','my_key','cancel','support','hotro','feedback','infotiktok','videotiktok','done']);
     if (!keyCenterCommands.has(cmd) && !['done','xong','hoanthanh'].includes(text.toLowerCase().trim())) {
       return showUserMenu(chatId);
     }
@@ -3231,14 +3224,14 @@ async function lookupInstagram(input) {
         const planId = payload.replace(/^buy[_-]/i, '').toLowerCase();
         return startPayment(chatId, fromId, planId);
       }
-      if (['trial', 'getkey', 'getkeyv1', 'keyfree'].includes(payload.toLowerCase())) return startGroupKeyTask(chatId, fromId, from);
-      if (['feedback', 'gopy', 'chiase'].includes(payload.toLowerCase())) { const ss = options.getSessions(); ss[fromId] = { type: 'feedback_photo', startedAt: Date.now() }; options.saveSessions(ss); return send(chatId, '🏆 <b>CHIA SẺ TRẢI NGHIỆM</b>\n<b>Bước 1/2:</b> Gửi ảnh chụp kết quả hoặc trải nghiệm.\n<b>Bước 2/2:</b> Gửi ghi chú ở tin nhắn tiếp theo.\nBot tự ghi nhận tài khoản Telegram; Admin duyệt trước khi đăng lên kênh. Gõ /cancel để hủy.'); }
+      if (['trial', 'getkeyv1', 'keyfree'].includes(payload.toLowerCase())) return startGroupKeyTask(chatId, fromId, from);
+      if (['feedback', 'gopy'].includes(payload.toLowerCase())) { const ss = options.getSessions(); ss[fromId] = { type: 'feedback', startedAt: Date.now() }; options.saveSessions(ss); return send(chatId, '📝 <b>Gửi góp ý</b>\nGửi 1 ảnh kèm nội dung ở phần chú thích ảnh. Admin sẽ xem trước khi đăng.'); }
       return showStart(chatId, displayName(from), from);
     }
     if (cmd === 'menu' || cmd === 'help') return showUserMenu(chatId);
     if (cmd === 'feedback') {
-      sessions[fromId] = { type: 'feedback_photo', startedAt: Date.now() }; options.saveSessions(sessions);
-      return send(chatId, '🏆 <b>CHIA SẺ TRẢI NGHIỆM</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>BƯỚC 1/2 · GỬI ẢNH</b>\nGửi ảnh chụp kết quả hoặc trải nghiệm của bạn trước. Không cần ghi chú trên ảnh.\n\n<b>BƯỚC 2/2 · GHI CHÚ</b>\nSau khi bot xác nhận đã nhận ảnh, hãy gửi một tin nhắn ngắn nói về trải nghiệm/kết quả bạn muốn chia sẻ.\n\n👤 Bot tự đính kèm tên, @username và Telegram ID để Admin xác minh. Admin duyệt rồi mới đăng lên kênh.\n❌ Gõ /cancel để hủy.');
+      sessions[fromId] = { type: 'feedback', startedAt: Date.now() }; options.saveSessions(sessions);
+      return send(chatId, '📝 <b>GỬI GÓP Ý</b>\nGửi một ảnh kèm nội dung trong phần chú thích ảnh. Nội dung sẽ được gửi admin duyệt trước khi đăng lên kênh.\n\nVí dụ: “Bảng lịch sử trên iPhone bị tràn màn hình”.');
     }
 
     if (cmd === 'status') {
@@ -3247,7 +3240,7 @@ async function lookupInstagram(input) {
       return send(chatId, `⏳ <b>${pending.length} yêu cầu</b>\n` + pending.map(r => `• #${r.id} ${r.type === 'payment' ? '💳' : r.type === 'reset' ? '🔄' : '🎯'}`).join('\n'));
     }
 
-    if (cmd === 'getkey' || cmd === 'getkeyv1') {
+    if (cmd === 'getkeyv1') {
       return startGroupKeyTask(chatId, fromId, from);
     }
 
@@ -3640,20 +3633,6 @@ ${info.private ? '🔒 Private' : '🌐 Public'}
     notifyAdmins,
     stop: () => { stopped = true; }
   };
-  // Telegram command keyboard: keep the main customer commands aligned with /help.
-  tg('setMyCommands', { commands: [
-    { command: 'start', description: 'Mở công cụ' },
-    { command: 'help', description: 'Hướng dẫn lệnh' },
-    { command: 'getkey', description: 'Key dùng thử qua nhiệm vụ' },
-    { command: 'getkeyv2', description: 'Nhận key qua Link4M' },
-    { command: 'muakeytx', description: 'Bảng giá và mua key' },
-    { command: 'nhapkey', description: 'Kích hoạt key' },
-    { command: 'mykey', description: 'Kiểm tra key' },
-    { command: 'infotiktok', description: 'Thông tin kênh TikTok' },
-    { command: 'videotiktok', description: 'Thông tin video TikTok' },
-    { command: 'feedback', description: 'Gửi góp ý' },
-    { command: 'cancel', description: 'Hủy thao tác' }
-  ] }).catch(e => console.warn('[telegram] setMyCommands:', e.message));
   loop();
   console.log(`[telegram] cmd-only bot started; admins=${adminIds.size}`);
   return bot;
@@ -3878,24 +3857,24 @@ function requireAdmin(req, res, next) {
 // ---------- configurable game feeds ----------
 const DEFAULT_GAMES = [
   // Sunwin
-  { id: 'sunwin', label: 'Sunwin · TX', brand: 'sunwin', brandLabel: 'Sunwin', variant: 'TX', url: 'https://apisunwin-cocalhahaha.onrender.com/api/sunwin', parser: 'sunwin', group: 'tx', icon: 'sunwin', enabled: true, playUrl: 'https://sun.win' },
-  { id: 'sicbo_sunwin', label: 'Sunwin · Sicbo', brand: 'sunwin', brandLabel: 'Sunwin', variant: 'Sicbo', url: 'https://apitaixiu-6jjn.onrender.com/api/sicbo/sunwin', parser: 'max789', group: 'sicbo', icon: 'sicbo', historyUrl: 'https://apitaixiu-6jjn.onrender.com/api/sicsun/history', enabled: true, playUrl: 'https://sun.win' },
+  { id: 'sunwin', label: 'Sunwin · TX', brand: 'sunwin', brandLabel: 'Sunwin', variant: 'TX', url: 'https://apisunwin-cocalhahaha.onrender.com/api/sunwin', parser: 'sunwin', group: 'tx', icon: 'sunwin', enabled: true, playUrl: 'https://web.sunwin.guitars/?affId=Sunwin' },
+  { id: 'sicbo_sunwin', label: 'Sunwin · Sicbo', brand: 'sunwin', brandLabel: 'Sunwin', variant: 'Sicbo', url: 'https://apitaixiu-6jjn.onrender.com/api/sicbo/sunwin', parser: 'max789', group: 'sicbo', icon: 'sicbo', historyUrl: 'https://apitaixiu-6jjn.onrender.com/api/sicsun/history', enabled: true, playUrl: 'https://web.sunwin.guitars/?affId=Sunwin' },
   // LC79
-  { id: 'lc79_hu', label: 'LC79 · TX', brand: 'lc79', brandLabel: 'LC79', variant: 'TX', url: 'https://wtx.tele68.com/v1/tx/sessions', parser: 'lc79', group: 'tx', icon: 'lc79', enabled: true, playUrl: '' },
-  { id: 'lc79_md5', label: 'LC79 · MD5', brand: 'lc79', brandLabel: 'LC79', variant: 'MD5', url: 'https://wtxmd52.tele68.com/v1/txmd5/sessions', parser: 'lc79', group: 'tx', icon: 'lc79', enabled: true, playUrl: '' },
+  { id: 'lc79_hu', label: 'LC79 · TX', brand: 'lc79', brandLabel: 'LC79', variant: 'TX', url: 'https://wtx.tele68.com/v1/tx/sessions', parser: 'lc79', group: 'tx', icon: 'lc79', enabled: true, playUrl: 'https://play.lc79.bet' },
+  { id: 'lc79_md5', label: 'LC79 · MD5', brand: 'lc79', brandLabel: 'LC79', variant: 'MD5', url: 'https://wtxmd52.tele68.com/v1/txmd5/sessions', parser: 'lc79', group: 'tx', icon: 'lc79', enabled: true, playUrl: 'https://play.lc79.bet' },
   // Max789
-  { id: 'max789_hu', label: 'Max789 · TX', brand: 'max789', brandLabel: 'Max789', variant: 'TX', url: 'https://apitaixiu-6jjn.onrender.com/max789/tx', parser: 'max789', group: 'tx', icon: 'max789', enabled: true, playUrl: '' },
-  { id: 'max789_md5', label: 'Max789 · MD5', brand: 'max789', brandLabel: 'Max789', variant: 'MD5', url: 'https://max789-nqfd.onrender.com/api/taixiumd5/max789', parser: 'max789', group: 'tx', icon: 'max789', enabled: true, playUrl: '' },
+  { id: 'max789_hu', label: 'Max789 · TX', brand: 'max789', brandLabel: 'Max789', variant: 'TX', url: 'https://apitaixiu-6jjn.onrender.com/max789/tx', parser: 'max789', group: 'tx', icon: 'max789', enabled: true, playUrl: 'https://play.max789h.vin/' },
+  { id: 'max789_md5', label: 'Max789 · MD5', brand: 'max789', brandLabel: 'Max789', variant: 'MD5', url: 'https://max789-nqfd.onrender.com/api/taixiumd5/max789', parser: 'max789', group: 'tx', icon: 'max789', enabled: true, playUrl: 'https://play.max789h.vin/' },
   // Hitclub
-  { id: 'hitclub_hu', label: 'Hitclub · TX', brand: 'hitclub', brandLabel: 'Hitclub', variant: 'TX', url: 'https://apihitclubhihi.onrender.com/api/hitclub/hu', parser: 'sunwin', group: 'tx', icon: 'hitclub', enabled: true, playUrl: '' },
-  { id: 'hitclub_md5', label: 'Hitclub · MD5', brand: 'hitclub', brandLabel: 'Hitclub', variant: 'MD5', url: 'https://apihitclubhihi.onrender.com/api/hitclub/md5', parser: 'sunwin', group: 'tx', icon: 'hitclub', enabled: true, playUrl: '' },
-  { id: 'sicbo_hitclub', label: 'Hitclub · Sicbo', brand: 'hitclub', brandLabel: 'Hitclub', variant: 'Sicbo', url: 'https://apitaixiu-6jjn.onrender.com/api/sicbo/hitclub', parser: 'max789', group: 'sicbo', icon: 'sicbo', enabled: true, playUrl: '' },
+  { id: 'hitclub_hu', label: 'Hitclub · TX', brand: 'hitclub', brandLabel: 'Hitclub', variant: 'TX', url: 'https://apihitclubhihi.onrender.com/api/hitclub/hu', parser: 'sunwin', group: 'tx', icon: 'hitclub', enabled: true, playUrl: 'https://v.hitclub.theatre/?a=hitclub' },
+  { id: 'hitclub_md5', label: 'Hitclub · MD5', brand: 'hitclub', brandLabel: 'Hitclub', variant: 'MD5', url: 'https://apihitclubhihi.onrender.com/api/hitclub/md5', parser: 'sunwin', group: 'tx', icon: 'hitclub', enabled: true, playUrl: 'https://v.hitclub.theatre/?a=hitclub' },
+  { id: 'sicbo_hitclub', label: 'Hitclub · Sicbo', brand: 'hitclub', brandLabel: 'Hitclub', variant: 'Sicbo', url: 'https://apitaixiu-6jjn.onrender.com/api/sicbo/hitclub', parser: 'max789', group: 'sicbo', icon: 'sicbo', enabled: true, playUrl: 'https://v.hitclub.theatre/?a=hitclub' },
   // BetVIP
-  { id: 'betvip_hu', label: 'BetVIP · TX', brand: 'betvip', brandLabel: 'BetVIP', variant: 'TX', url: 'https://apitaixiu-6jjn.onrender.com/betvip/tx', parser: 'max789', group: 'tx', icon: 'betvip', enabled: true, playUrl: '' },
-  { id: 'betvip_md5', label: 'BetVIP · MD5', brand: 'betvip', brandLabel: 'BetVIP', variant: 'MD5', url: 'https://apitaixiu-6jjn.onrender.com/betvip/md5', parser: 'max789', group: 'tx', icon: 'betvip', enabled: true, playUrl: '' },
+  { id: 'betvip_hu', label: 'BetVIP · TX', brand: 'betvip', brandLabel: 'BetVIP', variant: 'TX', url: 'https://apitaixiu-6jjn.onrender.com/betvip/tx', parser: 'max789', group: 'tx', icon: 'betvip', enabled: true, playUrl: 'https://play.betvip.trade/' },
+  { id: 'betvip_md5', label: 'BetVIP · MD5', brand: 'betvip', brandLabel: 'BetVIP', variant: 'MD5', url: 'https://apitaixiu-6jjn.onrender.com/betvip/md5', parser: 'max789', group: 'tx', icon: 'betvip', enabled: true, playUrl: 'https://play.betvip.trade/' },
   // B52
-  { id: 'b52_tx', label: 'B52 · TX', brand: 'b52', brandLabel: 'B52', variant: 'TX', url: 'https://apitaixiu-6jjn.onrender.com/b52/history', parser: 'b52hist', group: 'tx', icon: 'b52', enabled: true, playUrl: '' },
-  { id: 'sicbo_b52', label: 'B52 · Sicbo', brand: 'b52', brandLabel: 'B52', variant: 'Sicbo', url: 'https://apitaixiu-6jjn.onrender.com/api/sicbo/b52', parser: 'max789', group: 'sicbo', icon: 'sicbo', historyUrl: 'https://apitaixiu-6jjn.onrender.com/api/sicbo/history', enabled: true, playUrl: '' },
+  { id: 'b52_tx', label: 'B52 · TX', brand: 'b52', brandLabel: 'B52', variant: 'TX', url: 'https://apitaixiu-6jjn.onrender.com/b52/history', parser: 'b52hist', group: 'tx', icon: 'b52', enabled: true, playUrl: 'https://play.b52club.med/?app_id=B52' },
+  { id: 'sicbo_b52', label: 'B52 · Sicbo', brand: 'b52', brandLabel: 'B52', variant: 'Sicbo', url: 'https://apitaixiu-6jjn.onrender.com/api/sicbo/b52', parser: 'max789', group: 'sicbo', icon: 'sicbo', historyUrl: 'https://apitaixiu-6jjn.onrender.com/api/sicbo/history', enabled: true, playUrl: 'https://play.b52club.med/?app_id=B52' },
   
 ];
 
@@ -3909,6 +3888,22 @@ if (!gameConfigs.some(g => g.id === 'max789_md5' || (g.parser === 'max789' && g.
 for (const def of DEFAULT_GAMES) {
   if (!gameConfigs.some(g => g.id === def.id)) gameConfigs.push({ ...def });
 }
+// Migration: fill default game links on existing data files without overwriting links saved by Admin.
+let defaultLinksChanged = false;
+for (const def of DEFAULT_GAMES) {
+  const current = gameConfigs.find(g => g && g.id === def.id);
+  if (!current || !def.playUrl) continue;
+  if (!String(current.playUrl || current.play_url || current.gameLink || '').trim()) {
+    current.playUrl = def.playUrl;
+    defaultLinksChanged = true;
+  }
+  // A configured play link should not remain disabled by a stale comingSoon flag.
+  if (String(current.playUrl || current.play_url || current.gameLink || '').trim() && current.comingSoon) {
+    current.comingSoon = false;
+    defaultLinksChanged = true;
+  }
+}
+if (defaultLinksChanged) { try { saveJSON(GAMES_FILE, gameConfigs); } catch (e) {} }
 
 // Seed iconUrl mặc định theo brand nếu thiếu
 (function seedGameIcons() {
@@ -4488,7 +4483,6 @@ let botSettings = loadJSON(SETTINGS_FILE, null) || {
   bankCode: '', bankAccount: '', bankAccountName: '', plans: [],
   getkeyv2MaxPerDay: 2,
   getkeyv2LinkMinutes: 5,
-  getkeyv2KeyHours: 18,
   indexKeyMinutes: 30,
   link4mBaseUrl: 'https://link4m.co/api-shorten/v2',
   link4mApiToken: '',
@@ -4565,7 +4559,6 @@ function normalizeSettings(value) {
     // ===== GETKEYV2 / Index Key configurable =====
     getkeyv2MaxPerDay: Math.min(20, Math.max(1, Number(v.getkeyv2MaxPerDay ?? 2))),
     getkeyv2LinkMinutes: Math.min(30, Math.max(1, Number(v.getkeyv2LinkMinutes ?? 5))),
-    getkeyv2KeyHours: Math.min(168, Math.max(0.25, Number(v.getkeyv2KeyHours ?? 18))),
     indexKeyMinutes: Math.min(180, Math.max(5, Number(v.indexKeyMinutes ?? 30))),
     link4mBaseUrl: String(v.link4mBaseUrl || 'https://link4m.co/api-shorten/v2').trim().slice(0, 200),
     link4mApiToken: String(v.link4mApiToken || '').trim().slice(0, 120),
@@ -4688,12 +4681,12 @@ app.get('/api/link4m/pass', async (req, res) => {
   const uidQ = String(req.query.u || req.query.uid || '').trim();
 
   const page = (opts) => {
-    const { title, ok, key, minutes, hours, err } = opts;
+    const { title, ok, key, minutes, err } = opts;
     const keyBlock = key ? `
       <div class="keybox" id="keybox">${String(key).replace(/</g,'&lt;')}</div>
       <button type="button" class="btn" id="btnCopy">📋 Sao chép Key</button>
       <p class="tiny" id="copied" hidden>Đã sao chép!</p>
-      <p class="hint">Hết hạn khoảng <b>${hours != null ? hours + ' giờ' : (minutes || 30) + ' phút'}</b> · Dùng 1 thiết bị</p>
+      <p class="hint">Hết hạn khoảng <b>${minutes || 30} phút</b> · Dùng 1 thiết bị</p>
       <a class="link" href="/">Mở trang Index để UNLOCK →</a>
       <script>
         (function(){
@@ -4785,7 +4778,7 @@ h1{font-size:20px;margin:0 0 8px;font-weight:700}
   } catch (_) {}
 
   const cfg = (typeof botSettings !== 'undefined' && botSettings) ? botSettings : {};
-  const keyTtlHours = Number(cfg.getkeyv2KeyHours) || 18;
+  const keyTtlMin = Number(cfg.indexKeyMinutes) || 30;
   const maxPerDay = Number(cfg.getkeyv2MaxPerDay) || 2;
 
   // Phát key một lần — lưu trên pending để F5 vẫn xem lại được trong phiên
@@ -4805,8 +4798,8 @@ h1{font-size:20px;margin:0 0 8px;font-weight:700}
     }
     try {
       const issued = createKey({
-        label: 'Index Key · ' + keyTtlHours + 'h · TG ' + uid,
-        durationHours: keyTtlHours,
+        label: 'Index Key · ' + keyTtlMin + 'p · TG ' + uid,
+        durationHours: Math.max(0.25, keyTtlMin / 60),
         deviceLimit: 1,
         source: 'getkeyv2-page',
         telegramId: uid || null
@@ -4847,7 +4840,7 @@ h1{font-size:20px;margin:0 0 8px;font-weight:700}
     title: 'Key của bạn',
     ok: true,
     key: pending.plainKey,
-    hours: keyTtlHours
+    minutes: keyTtlMin
   }));
 });
 
@@ -4925,32 +4918,14 @@ app.post('/api/auth/telegram-webapp', express.json(), (req, res) => {
 
 app.get('/api/public/config', (req, res) => {
   res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-  // Game-link normalization: one valid playUrl is shared by every variant with the same brand.
-  // This prevents a stale comingSoon flag on TX/Sicbo/MD5 siblings from locking the whole card.
-  const allGames = Array.isArray(gameConfigs) ? gameConfigs : [];
-  const normBrand = value => String(value || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'game';
-  const brandPlay = Object.create(null);
-  for (const g of allGames) {
-    const candidate = String(g.playUrl || g.play_url || g.gameLink || '').trim();
-    if (candidate && validHttpUrl(candidate)) {
-      const b = normBrand(g.brand || g.id);
-      if (!brandPlay[b]) brandPlay[b] = { url: candidate, mode: g.playMode === 'external' ? 'external' : 'embed' };
-    }
-  }
-  const games = allGames.filter(g => g.visible !== false).map(g => {
-    const b = normBrand(g.brand || g.id);
-    const ownPlay = String(g.playUrl || g.play_url || g.gameLink || '').trim();
-    const shared = brandPlay[b];
-    const effectivePlayUrl = ownPlay && validHttpUrl(ownPlay) ? ownPlay : (shared ? shared.url : '');
-    return {
-      id: g.id, label: g.label || g.id, group: g.group || 'tx', brand: g.brand || g.id,
-      brandLabel: g.brandLabel || g.label || g.id, variant: g.variant || '', playUrl: effectivePlayUrl,
-      historyUrl: g.historyUrl || '', table: g.table || '', url: g.url || '',
-      playMode: g.playMode === 'external' ? 'external' : (shared ? shared.mode : 'embed'), enabled: g.enabled !== false,
-      visible: g.visible !== false, comingSoon: !!g.comingSoon && !effectivePlayUrl,
-      icon: g.icon || '', iconUrl: g.iconUrl || '', parser: g.parser || 'lc79'
-    };
-  });
+  const games = (Array.isArray(gameConfigs) ? gameConfigs : []).filter(g => g.visible !== false).map(g => ({
+    id: g.id, label: g.label || g.id, group: g.group || 'tx', brand: g.brand || g.id,
+    brandLabel: g.brandLabel || g.label || g.id, variant: g.variant || '', playUrl: g.playUrl || '',
+    historyUrl: g.historyUrl || '', table: g.table || '', url: g.url || '',
+    playMode: g.playMode === 'external' ? 'external' : 'embed', enabled: g.enabled !== false,
+    visible: g.visible !== false, comingSoon: !!g.comingSoon,
+    icon: g.icon || '', iconUrl: g.iconUrl || '', parser: g.parser || 'lc79'
+  }));
   const wm = botSettings.watermarkText || (games.length ? games.map(x => x.label).join(' · ') + ' · ToolTungTung' : 'ToolTungTung');
   const tgUser = String(botSettings.telegramUsername || process.env.TELEGRAM_BOT_USERNAME || '').replace(/^@/, '');
   const plans = (botSettings.plans || []).filter(p => p.active !== false).map(p => ({
@@ -5188,20 +5163,7 @@ app.post('/api/index-key/validate', (req, res) => {
   res.json({ ok: true, expiresAt: rec.expiresAt, label: 'Index Key · 30 phút' });
 });
 
-app.get('/api/games', requireUser, (req, res) => {
-  const linksByBrand = Object.create(null);
-  for (const g of gameConfigs) {
-    const b = String(g.brand || g.id).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
-    const u = String(g.playUrl || '').trim();
-    if (u && validHttpUrl(u) && !linksByBrand[b]) linksByBrand[b] = u;
-  }
-  const games = gameConfigs.filter(g => g.enabled !== false && g.visible !== false && FEEDS[g.id]).map(g => {
-    const b = String(g.brand || g.id).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
-    const playUrl = String(g.playUrl || '').trim() || linksByBrand[b] || '';
-    return { id: g.id, label: g.label, gameType: g.group === 'sicbo' ? 'sicbo' : (g.group === 'md5' || /md5/i.test(String(g.variant || '') + ' ' + String(g.id || '')) ? 'md5' : 'tx'), group: g.group || 'tx', icon: g.icon || '', brand: g.brand || g.id, brandLabel: g.brandLabel || g.label, variant: g.variant || '', playUrl, historyUrl: g.historyUrl || '', playMode: g.playMode === 'external' ? 'external' : 'embed', iconUrl: g.iconUrl || '', comingSoon: !!g.comingSoon && !playUrl };
-  });
-  res.json({ ok: true, games });
-});
+app.get('/api/games', requireUser, (req, res) => res.json({ ok: true, games: gameConfigs.filter(g => g.enabled !== false && g.visible !== false && !g.comingSoon && FEEDS[g.id]).map(g => ({ id: g.id, label: g.label, gameType: g.group === 'sicbo' ? 'sicbo' : (g.group === 'md5' || /md5/i.test(String(g.variant || '') + ' ' + String(g.id || '')) ? 'md5' : 'tx'), group: g.group || 'tx', icon: g.icon || '', brand: g.brand || g.id, brandLabel: g.brandLabel || g.label, variant: g.variant || '', playUrl: g.playUrl || '', historyUrl: g.historyUrl || '', playMode: g.playMode === 'external' ? 'external' : 'embed', iconUrl: g.iconUrl || '' })) }));
 app.get('/api/me', requireUser, (req, res) => {
   const k = req.userKey;
   res.json({
@@ -5239,13 +5201,13 @@ app.get('/api/predict', requireUser, async (req, res) => {
   // Recalibration only reduces overconfident percentages for TX/MD5; prediction and Sunwin Sicbo logic stay unchanged.
   let calibration = null;
   if (configuredGameType !== 'sicbo' && botSettings.predictionCalibrationEnabled !== false && ensemble && Number.isFinite(Number(ensemble.confidence))) {
-    const outcomes = (f.accuracyHistory || []).slice(0, 100).filter(row => !row.skipped && (typeof row.isCorrect === 'boolean' || typeof row.hit === 'boolean' || typeof row.correct === 'boolean' || typeof row.ok === 'boolean'));
+    const outcomes = (f.accuracyHistory || []).slice(0, 100).filter(row => typeof row.hit === 'boolean' || typeof row.correct === 'boolean' || typeof row.ok === 'boolean');
     const minSamples = Number(botSettings.predictionMinSamples || 12);
     const cap = Number(botSettings.predictionConfidenceCap || 68);
     let raw = Number(ensemble.confidence); if (raw > 0 && raw <= 1) raw *= 100;
     let adjusted = Math.min(raw, cap);
     if (outcomes.length >= minSamples) {
-      const hits = outcomes.filter(row => row.isCorrect === true || row.hit === true || row.correct === true || row.ok === true).length;
+      const hits = outcomes.filter(row => row.hit === true || row.correct === true || row.ok === true).length;
       const rate = hits / outcomes.length * 100;
       const weight = outcomes.length / (outcomes.length + 30);
       adjusted = 50 + (Math.min(raw, cap) - 50) * 0.65 + (rate - 50) * 0.35 * weight;
@@ -5342,11 +5304,10 @@ app.get('/api/accuracy', requireUser, (req, res) => {
   let runC = 0, runT = 0, hits = 0, miss = 0;
   const series = [];
   for (const row of chrono) {
-    const isHit = typeof row.isCorrect === 'boolean' ? row.isCorrect
-      : (typeof row.hit === 'boolean' ? row.hit
+    const isHit = typeof row.hit === 'boolean' ? row.hit
       : (typeof row.correct === 'boolean' ? row.correct
       : (row.pred != null && row.actual != null ? row.pred === row.actual
-      : (row.prediction != null && row.result != null ? row.prediction === row.result : false))));
+      : (row.prediction != null && row.result != null ? row.prediction === row.result : false)));
     if (isHit) hits++; else miss++;
     runT++; if (isHit) runC++;
     series.push({
@@ -5497,23 +5458,7 @@ app.patch('/api/admin/games/:id', requireAdmin, (req, res) => {
   if (req.body?.icon !== undefined) config.icon = String(req.body.icon || '').trim().slice(0, 40);
   if (req.body?.iconUrl !== undefined) config.iconUrl = String(req.body.iconUrl || '').trim().slice(0, 500);
   if (req.body?.comingSoon !== undefined) config.comingSoon = !!req.body.comingSoon;
-  if (req.body?.playUrl !== undefined) {
-    const savedPlayUrl = String(req.body.playUrl || '').trim();
-    if (savedPlayUrl && !validHttpUrl(savedPlayUrl)) return res.status(400).json({ error: 'Link chơi phải là URL HTTP/HTTPS hợp lệ. Hãy nhập vào ô Link chơi, không phải ô API dữ liệu.' });
-    if (savedPlayUrl) {
-      config.comingSoon = false;
-      // Share the brand link across variants (for example TX + Sicbo) when they use the same brand.
-      const brandKey = String(config.brand || config.id).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
-      for (const sibling of gameConfigs) {
-        const siblingKey = String(sibling.brand || sibling.id).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
-        if (sibling !== config && siblingKey === brandKey) {
-          sibling.playUrl = savedPlayUrl;
-          sibling.playMode = config.playMode === 'external' ? 'external' : (sibling.playMode || 'embed');
-          sibling.comingSoon = false;
-        }
-      }
-    }
-  }
+  if (req.body?.playUrl !== undefined && String(req.body.playUrl || '').trim()) config.comingSoon = false;
   if (req.body?.visible !== undefined) config.visible = req.body.visible !== false;
   if (req.body?.image !== undefined && req.body?.iconUrl === undefined) config.iconUrl = String(req.body.image || '').trim().slice(0, 500);
   if (FEEDS[config.id]) {
@@ -5552,43 +5497,35 @@ app.get('/api/admin/accuracy', requireAdmin, (req, res) => {
   const f = FEEDS[req.query.game]; if (!f) return res.status(400).json({ error: 'Game không hợp lệ.' });
   const limit = Math.min(10000, Math.max(1, parseInt(req.query.limit, 10) || 200));
   const hist = (f.accuracyHistory || []).slice(0, limit);
-  const norm = (v) => {
-    if (v === null || v === undefined) return null;
-    const s = String(v).trim().toUpperCase();
-    if (!s || s === '—' || s === '-' || s === 'NULL' || s === 'UNDEFINED') return null;
-    if (/^(T|TAI|BIG)$/.test(s)) return 'T';
-    if (/^(X|XIU|SMALL)$/.test(s)) return 'X';
-    return s;
-  };
-  let hits = 0, miss = 0, skipped = 0;
+  // hist items typically { session, pred, actual, hit, ts } or similar — normalize
+  let hits = 0, miss = 0;
   const series = [];
   const chrono = hist.slice().reverse();
   let runC = 0, runT = 0;
   for (const row of chrono) {
-    if (row.skipped || row.isCorrect === null) { skipped++; continue; }
-    const explicit = typeof row.isCorrect === 'boolean' ? row.isCorrect
-      : typeof row.hit === 'boolean' ? row.hit
-      : typeof row.correct === 'boolean' ? row.correct
-      : typeof row.ok === 'boolean' ? row.ok : null;
-    const pred = norm(row.predicted ?? row.pred ?? row.prediction);
-    const actual = norm(row.actual ?? row.result ?? row.char);
-    // Only infer a hit/miss when both sides are present; unknown records are not false misses.
-    const h = explicit !== null ? explicit : (pred !== null && actual !== null ? pred === actual : null);
-    if (h === null) { skipped++; continue; }
+    const hit = row.hit === true || row.correct === true || row.ok === true || row.prediction === row.result || row.pred === row.actual;
+    const isHit = typeof row.hit === 'boolean' ? row.hit : (typeof row.correct === 'boolean' ? row.correct : null);
+    const h = isHit !== null ? isHit : !!hit;
     if (h) hits++; else miss++;
     runT++; if (h) runC++;
     series.push({
       session: row.session || row.phien || null,
       hit: h,
-      pred: row.predicted || row.pred || row.prediction || null,
+      pred: row.pred || row.prediction || row.predicted || null,
       actual: row.actual || row.result || row.char || null,
       ts: row.ts || row.time || null,
       accPct: runT ? +(runC / runT * 100).toFixed(1) : 0
     });
   }
-  const scored = hits + miss;
-  res.json({ ok: true, game: req.query.game, correct: hits, total: scored, globalCorrect: f.correct, globalTotal: f.total,
-    accuracy: scored ? +(hits / scored * 100).toFixed(1) : null, hits, miss, skipped, scored, series, history: hist });
+  res.json({
+    ok: true,
+    game: req.query.game,
+    correct: f.correct, total: f.total,
+    accuracy: f.total ? +(f.correct / f.total * 100).toFixed(1) : null,
+    hits, miss,
+    series,
+    history: hist
+  });
 });
 app.post('/api/admin/reset', requireAdmin, (req, res) => {
   const id = req.body?.game;
@@ -5729,9 +5666,7 @@ app.post('/api/admin/requests/:id/review', requireAdmin, async (req, res) => {
   if (approved && result.request.type === 'feedback') {
     const cfg = botSettings || {};
     const target = String(cfg.feedbackChannelId || '').trim();
-    const safe = value => String(value == null ? '' : value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const r = result.request;
-    const cap = `🏆 <b>CHIA SẺ TỪ NGƯỜI DÙNG</b>\n━━━━━━━━━━━━━━━━━━━━\n${safe(r.caption || '').slice(0, 1200)}\n\n👤 <b>${safe(r.userName || 'Người dùng')}</b>${r.username ? ` · @${safe(r.username)}` : ''}\n🆔 Telegram ID: <code>${safe(r.telegramId || '')}</code>\n🗓 ${new Date(r.createdAt || Date.now()).toLocaleString('vi-VN')}\n\nToolTungTung · @SunNetWin`;
+    const cap = `📝 <b>GÓP Ý NGƯỜI DÙNG</b>\n${String(result.request.caption || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').slice(0, 1500)}\n\n— ${String(result.request.userName || 'Người dùng').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')} · @SunNetWin`;
     try {
       const ids = (result.request.proofFileIds && result.request.proofFileIds.length ? result.request.proofFileIds : [result.request.proofFileId]).filter(Boolean).slice(0, 10);
       if (ids.length > 1) {
