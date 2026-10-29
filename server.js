@@ -882,88 +882,140 @@ class Engine {
     // Ensemble: Log-odds pooling + trong so EWMA accuracy + shrink + cooling
     getEnsemblePrediction() {
         const allPreds = this.getAllPredictions();
-        let logOdds = 0;   // >0 ung voi TAI
+        let logOdds = 0;
         let totalWeight = 0;
         let activeCount = 0;
-        let topReason = 'Thuật Toán Engine @SunNetWin';
+        let topReason = 'Engine VIP @SunNetWin';
         let highestW = 0;
+        let voteT = 0, voteX = 0;
+        const votes = [];
 
         const regime = (this.marketState && this.marketState.regime) || '';
-        const isBet = /Bệt|Chuỗi/.test(regime);
-        const isNhip = /Nhịp|1-1/.test(regime);
+        const isBet = /Bệt|Chuỗi|BET/i.test(regime);
+        const isNhip = /Nhịp|1-1|NHIP/i.test(regime);
+        const hist = this.history || [];
+        const n = hist.length;
+
+        // Prior Laplace + time-decay trên lịch sử gần
+        let priorT = 0.5;
+        if (n >= 8) {
+            let wSum = 0, tSum = 0;
+            const take = Math.min(40, n);
+            for (let i = 0; i < take; i++) {
+                const w = Math.exp(-i / 18);
+                wSum += w;
+                if (hist[n - 1 - i] === 'T') tSum += w;
+            }
+            priorT = (tSum + 1) / (wSum + 2);
+        }
+
+        let streak = 0, streakSide = null;
+        if (n > 0) {
+            streakSide = hist[n - 1];
+            streak = 1;
+            for (let i = n - 2; i >= 0 && hist[i] === streakSide; i--) streak++;
+        }
 
         for (const [modelName, pred] of Object.entries(allPreds)) {
             if (!pred || !pred.prediction) continue;
             let baseW = (this.weights[modelName] !== undefined ? this.weights[modelName] : 1.0);
-            // SIÊU NÂNG: học cầu nhiều, giảm 1-1
-            if (isBet && (modelName === 'model_antiBreak' || modelName === 'model20' || modelName === 'model17' || modelName === 'model21')) baseW *= 1.35;
-            if (isBet && (modelName === 'model16' || modelName === 'model22' || modelName === 'model23')) baseW *= 1.2;
-            if (isNhip && modelName === 'model1') baseW *= 0.7; // giảm bắt 1-1 kể cả khi regime nhịp
-            if (isBet && modelName === 'model1') baseW *= 0.12;
-            if (isBet && modelName === 'model_antiBreak') baseW *= 1.4;
-            if (!isNhip && modelName === 'model1') baseW *= 0.35; // hầu như bỏ model1 khi không phải nhịp sạch
+
+            if (isBet && (modelName === 'model_antiBreak' || modelName === 'model20' || modelName === 'model17' || modelName === 'model21' || modelName === 'model2')) baseW *= 1.4;
+            if (isBet && (modelName === 'model16' || modelName === 'model22' || modelName === 'model23' || modelName === 'model24')) baseW *= 1.22;
+            if (isNhip && modelName === 'model1') baseW *= 0.65;
+            if (isBet && modelName === 'model1') baseW *= 0.1;
+            if (isBet && modelName === 'model_antiBreak') baseW *= 1.35;
+            if (!isNhip && modelName === 'model1') baseW *= 0.3;
+            if (streak >= 5 && (modelName === 'model_antiBreak' || modelName === 'model2' || modelName === 'model20')) baseW *= 1.25;
+            if (streak >= 7 && modelName === 'model22') baseW *= 1.15;
+
             const ewma = this.modelHits[modelName] ? this.modelHits[modelName].ewma : 0.5;
-            const accMult = 0.5 + ewma;
-            const w = baseW * accMult * pred.confidence;
+            const accMult = Math.pow(0.35 + ewma, 1.35);
+            const conf = Math.min(0.92, Math.max(0.5, Number(pred.confidence) || 0.55));
+            const w = baseW * accMult * conf;
+            if (w < 0.02) continue;
             activeCount++;
 
-            const p = pred.prediction === 'T' ? pred.confidence : (1 - pred.confidence);
-            const pc = Math.min(Math.max(p, 0.1), 0.9);
+            const isT = pred.prediction === 'T';
+            if (isT) voteT += w; else voteX += w;
+            votes.push({ model: modelName, pred: pred.prediction, w, conf, reason: pred.reason });
+
+            const p = isT ? conf : (1 - conf);
+            const pc = Math.min(Math.max(p, 0.12), 0.88);
             logOdds += w * Math.log(pc / (1 - pc));
             totalWeight += w;
-
-            if (w > highestW) { highestW = w; topReason = pred.reason; }
+            if (w > highestW) { highestW = w; topReason = pred.reason || topReason; }
         }
 
-        if (totalWeight === 0) {
-            // Fallback: dung ty le co so tu lich su gan nhat (khong random nhu ban cu)
-            const recent = this.history.slice(-20);
+        if (n >= 8 && totalWeight > 0) {
+            const priorStrength = Math.min(2.2, 0.8 + n / 40);
+            const pp = Math.min(Math.max(priorT, 0.2), 0.8);
+            logOdds += priorStrength * Math.log(pp / (1 - pp));
+            totalWeight += priorStrength;
+        }
+
+        if (totalWeight === 0 || activeCount === 0) {
+            const recent = hist.slice(-24);
             const tFreq = recent.length ? recent.filter(c => c === 'T').length / recent.length : 0.5;
-            const pT = (tFreq * recent.length + 1) / (recent.length + 2);
-            let taiProb = Math.round(pT * 100);
-            taiProb = Math.min(Math.max(taiProb, 35), 65);
-            const xiuProb = 100 - taiProb;
+            const pT0 = (tFreq * recent.length + 1) / (recent.length + 2);
+            let taiProb = Math.round(pT0 * 100);
+            taiProb = Math.min(Math.max(taiProb, 38), 62);
             const isTai = taiProb >= 50;
             return {
                 predictedResult: isTai ? 'TÀI' : 'XỈU',
-                confidence: isTai ? taiProb : xiuProb,
-                taiProb: taiProb,
-                xiuProb: xiuProb,
-                activeModels: 0,
-                topReason: 'Đang phân tích dữ liệu & khởi tạo Engine @SunNetWin...'
+                confidence: Math.max(52, Math.min(62, Math.abs(taiProb - 50) + 52)),
+                taiProb, xiuProb: 100 - taiProb,
+                reason: 'Prior lịch sử',
+                topReason: 'Prior lịch sử',
+                modelsUsed: 0, activeModels: 0,
+                market: this.marketState || {},
+                algos: []
             };
         }
 
-        // Shrink ve 0.5 khi tong trong so thap (it chung khoan)
-        const shrink = Math.min(1, totalWeight / 5);
-        const aggLo = logOdds * shrink;
-        let pT = 1 / (1 + Math.exp(-aggLo));
+        let pT = 1 / (1 + Math.exp(-logOdds / Math.max(1, totalWeight * 0.35)));
+        const voteShareT = voteT / (voteT + voteX + 1e-9);
+        pT = pT * 0.72 + voteShareT * 0.28;
 
-        // Cooling + shrink: hạn chế tự tin giả khi lịch sử ngắn hoặc thị trường nhiễu.
-        const cool = Math.max(0.38, 1 - this.consecutiveLosses * 0.14);
-        pT = 0.5 + (pT - 0.5) * cool;
-        const historyN = this.history.length;
-        const volatility = Number(this.sessionStats.volatility || 0.5);
-        const entropy = Number(this.entropy || 1);
-        const sampleFactor = Math.min(1, Math.max(0.25, historyN / 40));
-        const noiseFactor = (entropy > 0.96 || volatility > 0.78) ? 0.58 : (entropy > 0.9 || volatility > 0.68 ? 0.78 : 1);
-        // A clean 1-1 pattern is not treated as a deterministic reversal signal.
-        const antiAlternationFactor = isNhip ? 0.72 : 1;
-        pT = 0.5 + (pT - 0.5) * sampleFactor * noiseFactor * antiAlternationFactor;
+        const pVote = Math.min(0.99, Math.max(0.01, voteShareT));
+        const entropy = -(pVote * Math.log2(pVote) + (1 - pVote) * Math.log2(1 - pVote));
+        const agree = 1 - entropy;
+        pT = 0.5 + (pT - 0.5) * (0.55 + 0.45 * agree);
 
+        if (streak >= 8 && streakSide) {
+            const pull = Math.min(0.12, (streak - 7) * 0.02);
+            if (streakSide === 'T') pT -= pull; else pT += pull;
+        }
+
+        pT = Math.min(0.88, Math.max(0.12, pT));
         let taiProb = Math.round(pT * 100);
-        taiProb = Math.min(Math.max(taiProb, 30), 70);
-        const xiuProb = 100 - taiProb;
+        let xiuProb = 100 - taiProb;
         const isTai = taiProb >= 50;
-        const finalConfidence = isTai ? taiProb : xiuProb;
+        const edge = Math.abs(taiProb - 50);
+        const sampleBoost = Math.min(8, n / 8);
+        let confidence = Math.round(50 + edge * (0.7 + 0.3 * agree) + sampleBoost * 0.4);
+        confidence = Math.min(86, Math.max(52, confidence));
+
+        const algos = votes.sort((a, b) => b.w - a.w).slice(0, 6).map(v => ({
+            model: v.model, pred: v.pred, conf: Math.round(v.conf * 100), reason: v.reason
+        }));
 
         return {
             predictedResult: isTai ? 'TÀI' : 'XỈU',
-            confidence: finalConfidence,
-            taiProb: taiProb,
-            xiuProb: xiuProb,
+            confidence,
+            taiProb,
+            xiuProb,
+            reason: topReason,
+            topReason,
+            modelsUsed: activeCount,
             activeModels: activeCount,
-            topReason: topReason
+            market: this.marketState || {},
+            regime,
+            trend: (this.marketState && this.marketState.trend) || null,
+            agreement: Math.round(agree * 100),
+            streak: streak || 0,
+            streakSide: streakSide || null,
+            algos
         };
     }
 }
@@ -2910,49 +2962,57 @@ Key sẽ được gửi khi giao dịch được xác nhận.
   }
 
   async function startPayment(chatId, fromId, planId) {
-    const plan = plans().find(p => p.id === String(planId || '').toLowerCase());
-    if (!plan) return send(chatId, '❌ Gói không tồn tại. Gõ /muakeytx để chọn lại.');
-    const config = options.getConfig();
-    if (!String(config.bankCode || '').trim() || !String(config.bankAccount || '').trim() || !String(config.bankAccountName || '').trim()) {
-      logLine('[shop] payment unavailable: bank account settings incomplete');
-      return send(chatId, '⚠️ Chưa cấu hình STK nhận tiền.\nAdmin: Index Admin → tab Ngân hàng → Lưu.\nHoặc bot: <code>/setbank VCB 0123456789 NGUYEN VAN A</code>');
-    }
-    const orderId = genOrderId();
-    const timeoutSec = Math.min(900, Math.max(60, Number(config.orderTimeoutSec || 300)));
-    const order = {
-      id: orderId, planId: plan.id, planLabel: plan.label, price: Number(plan.price),
-      durationHours: Number(plan.durationHours), deviceLimit: 1,
-      telegramId: String(fromId), status: 'pending', createdAt: Date.now(),
-      expiresAt: Date.now() + timeoutSec * 1000, content: orderId, chatId: String(chatId)
-    };
-    const paymentSessions = options.getSessions();
-    paymentSessions[String(fromId)] = { type: 'payment', planId: plan.id, orderId, startedAt: Date.now() };
-    options.saveSessions(paymentSessions);
     try {
-      if (typeof orders !== 'undefined') {
-        orders.push(order);
-        if (orders.length > 500) orders.splice(0, orders.length - 500);
-        if (typeof saveOrders === 'function') saveOrders();
+      const plan = plans().find(p => p.id === String(planId || '').toLowerCase());
+      if (!plan) return send(chatId, '❌ Gói không tồn tại. Gõ /muakeytx để chọn lại.');
+      const config = options.getConfig() || {};
+      const bankCode = String(config.bankCode || '').trim();
+      const bankAccount = String(config.bankAccount || '').trim().replace(/\s+/g, '');
+      const bankName = String(config.bankAccountName || '').trim();
+      if (!bankCode || !bankAccount || !bankName) {
+        logLine('[shop] payment unavailable: bank incomplete code=' + bankCode + ' acc=' + !!bankAccount);
+        return send(chatId,
+`⚠️ <b>CHƯA CẤU HÌNH NGÂN HÀNG</b>
+Admin lưu STK: Index Admin → Ngân hàng
+hoặc: <code>/setbank VCB 0123456789 NGUYEN VAN A</code>`);
       }
-    } catch (e) {}
-    const bankCode = String(config.bankCode || '').trim();
-    const bankAccount = String(config.bankAccount || '').trim().replace(/\s+/g, '');
-    const bankName = String(config.bankAccountName || '').trim();
-    if (!bankCode || !bankAccount || !bankName) {
-      return send(chatId, '⚠️ Chưa cấu hình ngân hàng nhận tiền.\nAdmin vào Index Admin → Ngân hàng để lưu STK.');
-    }
-    let qr = '';
-    try {
-      if (typeof buildVietQr === 'function') qr = buildVietQr(plan.price, orderId) || '';
-    } catch (e) { qr = ''; }
-    if (!qr) {
-      qr = 'https://img.vietqr.io/image/' + encodeURIComponent(bankCode) + '-' + encodeURIComponent(bankAccount)
-        + '-compact2.jpg?amount=' + encodeURIComponent(String(Math.round(Number(plan.price) || 0)))
-        + '&addInfo=' + encodeURIComponent(orderId)
-        + '&accountName=' + encodeURIComponent(bankName);
-    }
-    const days = plan.durationHours >= 24 ? `${Math.round(plan.durationHours / 24)} ngày` : `${plan.durationHours}h`;
-    const caption =
+
+      const orderId = (typeof genOrderId === 'function' ? genOrderId() : ('TungTung-' + Date.now().toString(36).toUpperCase()));
+      const timeoutSec = Math.min(900, Math.max(60, Number(config.orderTimeoutSec || 300)));
+      const order = {
+        id: orderId, planId: plan.id, planLabel: plan.label, price: Number(plan.price),
+        durationHours: Number(plan.durationHours), deviceLimit: 1,
+        telegramId: String(fromId), status: 'pending', createdAt: Date.now(),
+        expiresAt: Date.now() + timeoutSec * 1000, content: orderId, chatId: String(chatId)
+      };
+
+      try {
+        const paymentSessions = options.getSessions();
+        paymentSessions[String(fromId)] = { type: 'payment', planId: plan.id, orderId, startedAt: Date.now() };
+        options.saveSessions(paymentSessions);
+      } catch (e) { logLine('[shop] session: ' + (e.message || e)); }
+      try {
+        if (Array.isArray(orders)) {
+          orders.push(order);
+          if (orders.length > 500) orders.splice(0, orders.length - 500);
+          if (typeof saveOrders === 'function') saveOrders();
+        }
+      } catch (e) { logLine('[shop] order: ' + (e.message || e)); }
+
+      let qr = null;
+      try { qr = typeof buildVietQr === 'function' ? buildVietQr(plan.price, orderId) : null; } catch (e) {}
+      if (!qr) {
+        qr = 'https://img.vietqr.io/image/' + encodeURIComponent(bankCode) + '-' + encodeURIComponent(bankAccount)
+          + '-compact2.jpg?amount=' + encodeURIComponent(String(Math.round(Number(plan.price) || 0)))
+          + '&addInfo=' + encodeURIComponent(orderId)
+          + '&accountName=' + encodeURIComponent(bankName);
+      }
+      const amount = Math.round(Number(plan.price) || 0);
+      const qrPrint = String(qr).replace('-compact2.jpg', '-print.jpg');
+      const qrOnly = 'https://img.vietqr.io/image/' + encodeURIComponent(bankCode) + '-' + encodeURIComponent(bankAccount)
+        + '-qr_only.png?amount=' + encodeURIComponent(String(amount)) + '&addInfo=' + encodeURIComponent(orderId);
+      const days = plan.durationHours >= 24 ? (Math.round(plan.durationHours / 24) + ' ngày') : (plan.durationHours + 'h');
+      const caption =
 `<b>💳 THANH TOÁN KEY</b>
 ━━━━━━━━━━━━━━━━━━━━
 📦 Gói: <b>${esc(plan.label)}</b>
@@ -2963,50 +3023,66 @@ Key sẽ được gửi khi giao dịch được xác nhận.
 💳 STK: <code>${esc(bankAccount)}</code>
 👤 ${esc(bankName)}
 
-📝 Nội dung chuyển khoản (bắt buộc):
+📝 Nội dung CK (bắt buộc):
 <code>${orderId}</code>
 
-✅ Sau khi chuyển khoản, gõ <b>DONE</b> (hoặc bấm nút) để hệ thống xác nhận.
-⏰ Hết hạn sau <b>${Math.round(timeoutSec/60)} phút</b>.
+✅ Sau khi CK, gõ <b>DONE</b> để hệ thống xác nhận.
+⏰ Hết hạn <b>${Math.round(timeoutSec / 60)} phút</b>
 💬 @SunNetWin`;
-    const kb = { inline_keyboard: [
-      [{ text: '✅ DONE — Xác nhận đã CK', callback_data: 'pay:done' }],
-      [{ text: '❌ Hủy đơn', callback_data: 'cmd:cancel' }]
-    ] };
-    let sent = null;
-    try {
-      sent = await sendPhoto(chatId, qr, { caption, reply_markup: kb });
-    } catch (e1) {
+      const kb = { inline_keyboard: [
+        [{ text: '✅ DONE — Xác nhận đã CK', callback_data: 'pay:done' }],
+        [{ text: '❌ Hủy đơn', callback_data: 'cmd:cancel' }]
+      ] };
+
+      let msgId = null;
       try {
-        // fallback: ảnh print template
-        const qr2 = qr.replace('-compact2.jpg', '-print.jpg');
-        sent = await sendPhoto(chatId, qr2, { caption, reply_markup: kb });
-      } catch (e2) {
-        // fallback text + link QR
-        await send(chatId, caption + '\n\n🔗 Mở mã QR:\n' + qr, { reply_markup: kb });
-        sent = null;
+        const t = await send(chatId, caption, { reply_markup: kb });
+        msgId = t && (t.message_id || (t.result && t.result.message_id));
+      } catch (e) {
+        logLine('[shop] text fail: ' + (e.message || e));
+        try { await send(chatId, 'Đơn: ' + orderId + ' · ' + fmt(plan.price) + 'đ · STK ' + bankAccount); } catch (e2) {}
       }
-    }
-    const msgId = sent && (sent.message_id || (sent.result && sent.result.message_id));
-    if (msgId && typeof orders !== 'undefined') {
-      const o = orders.find(x => x.id === orderId);
-      if (o) { o.tgMessageId = msgId; o.chatId = String(chatId); if (typeof saveOrders === 'function') saveOrders(); }
-    }
-    // auto expire
-    setTimeout(async () => {
-      try {
-        const o = (typeof orders !== 'undefined' ? orders : []).find(x => x.id === orderId);
-        if (!o || o.status !== 'pending') return;
-        o.status = 'expired';
-        if (typeof saveOrders === 'function') saveOrders();
-        const expireText = (config.botPayExpireText || 'Số tiền key thời gian tạo đã hết hạn. Vui lòng tạo mới nếu mua hàng.');
-        if (msgId) {
-          try { await tg('deleteMessage', { chat_id: chatId, message_id: msgId }); } catch (e) {}
+
+      let photoOk = false;
+      for (const url of [qr, qrPrint, qrOnly]) {
+        try {
+          const sent = await sendPhoto(chatId, url, {
+            caption: '📷 <b>Quét VietQR</b>\n💰 <b>' + fmt(plan.price) + 'đ</b>\n📝 <code>' + orderId + '</code>'
+          });
+          if (sent) {
+            photoOk = true;
+            msgId = sent.message_id || (sent.result && sent.result.message_id) || msgId;
+            break;
+          }
+        } catch (e) {
+          logLine('[shop] QR fail: ' + String(e.message || e).slice(0, 120));
         }
-        await send(chatId, '⏰ <b>ĐƠN HẾT HẠN</b>\n' + esc(expireText) + '\n\nGói: <b>' + esc(plan.label) + '</b> · ' + fmt(plan.price) + 'đ\nMã: <code>' + orderId + '</code>');
-      } catch (e) {}
-    }, timeoutSec * 1000);
+      }
+      if (!photoOk) {
+        try { await send(chatId, '🔗 Mở mã QR:\n' + qr); } catch (e) {}
+      }
+
+      if (msgId && Array.isArray(orders)) {
+        const o = orders.find(x => x.id === orderId);
+        if (o) { o.tgMessageId = msgId; o.chatId = String(chatId); try { saveOrders(); } catch (e) {} }
+      }
+
+      setTimeout(async () => {
+        try {
+          const o = (Array.isArray(orders) ? orders : []).find(x => x.id === orderId);
+          if (!o || o.status !== 'pending') return;
+          o.status = 'expired';
+          try { saveOrders(); } catch (e) {}
+          if (msgId) { try { await tg('deleteMessage', { chat_id: chatId, message_id: msgId }); } catch (e) {} }
+          await send(chatId, '⏰ <b>ĐƠN HẾT HẠN</b>\nGói: <b>' + esc(plan.label) + '</b> · ' + fmt(plan.price) + 'đ\nMã: <code>' + orderId + '</code>\nGõ /muakeytx để tạo lại.');
+        } catch (e) {}
+      }, timeoutSec * 1000);
+    } catch (e) {
+      logLine('[shop] startPayment fatal: ' + (e && e.message || e));
+      try { await send(chatId, '❌ Lỗi tạo đơn: ' + esc(String(e && e.message || e)) + '\nThử /muakeytx lại · @SunNetWin'); } catch (e2) {}
+    }
   }
+
 
   async function handleCallback(cq) {
     if (!cq) return;
@@ -6008,6 +6084,32 @@ app.post('/api/admin/requests/:id/review', requireAdmin, async (req, res) => {
   res.json({ ok: true, request: publicRequest(result.request) });
 });
 
+// ---------- AUTO PAYMENT: VietQR orders + webhook (SePay/Casso/PayOS) ----------
+const ORDERS_FILE = path.join(DATA_DIR, 'orders.json');
+let orders = loadJSON(ORDERS_FILE, []);
+if (!Array.isArray(orders)) orders = [];
+const saveOrders = () => saveJSON(ORDERS_FILE, orders);
+
+function genOrderId() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const bytes = crypto.randomBytes(5);
+  let tail = '';
+  for (let i = 0; i < 5; i++) tail += alphabet[bytes[i] % alphabet.length];
+  return 'TungTung-' + tail;
+}
+
+function buildVietQr(amount, addInfo) {
+  const cfg = botSettings || {};
+  const code = String(cfg.bankCode || '').trim();
+  const acc = String(cfg.bankAccount || '').trim().replace(/\s+/g, '');
+  const name = String(cfg.bankAccountName || '').trim();
+  if (!code || !acc) return null;
+  return 'https://img.vietqr.io/image/' + encodeURIComponent(code) + '-' + encodeURIComponent(acc)
+    + '-compact2.jpg?amount=' + encodeURIComponent(String(Math.round(Number(amount) || 0)))
+    + '&addInfo=' + encodeURIComponent(String(addInfo || ''))
+    + '&accountName=' + encodeURIComponent(name);
+}
+
 // ---------- start bot + polling ----------
 let telegramBot = null;
 if (process.env.TELEGRAM_BOT_TOKEN || process.env.WEB_BOT_TOKEN) {
@@ -6034,31 +6136,6 @@ setInterval(saveState, 60000);
 Promise.all(Object.keys(FEEDS).map(id => pollFeed(id)));
 
 
-// ---------- AUTO PAYMENT: VietQR orders + webhook (SePay/Casso/PayOS) ----------
-const ORDERS_FILE = path.join(DATA_DIR, 'orders.json');
-let orders = loadJSON(ORDERS_FILE, []);
-if (!Array.isArray(orders)) orders = [];
-const saveOrders = () => saveJSON(ORDERS_FILE, orders);
-
-function genOrderId() {
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  const bytes = crypto.randomBytes(5);
-  let tail = '';
-  for (let i = 0; i < 5; i++) tail += alphabet[bytes[i] % alphabet.length];
-  return 'TungTung-' + tail;
-}
-
-function buildVietQr(amount, addInfo) {
-  const cfg = botSettings || {};
-  const code = String(cfg.bankCode || '').trim();
-  const acc = String(cfg.bankAccount || '').trim().replace(/\s+/g, '');
-  const name = String(cfg.bankAccountName || '').trim();
-  if (!code || !acc) return null;
-  return 'https://img.vietqr.io/image/' + encodeURIComponent(code) + '-' + encodeURIComponent(acc)
-    + '-compact2.jpg?amount=' + encodeURIComponent(String(Math.round(Number(amount) || 0)))
-    + '&addInfo=' + encodeURIComponent(String(addInfo || ''))
-    + '&accountName=' + encodeURIComponent(name);
-}
 
 async function tgSendMessage(chatId, text, extra) {
   const token = process.env.TELEGRAM_BOT_TOKEN || process.env.WEB_BOT_TOKEN;
