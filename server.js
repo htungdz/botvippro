@@ -1054,9 +1054,33 @@ function startTelegramBot(options) {
   }
   const send = (chat_id, text, extra = {}) => tg('sendMessage', { chat_id, text, parse_mode: 'HTML', disable_web_page_preview: false, ...extra });
   const sendPhoto = (chat_id, photo, extra = {}) => tg('sendPhoto', { chat_id, photo, parse_mode: 'HTML', ...extra });
+  // Tải ảnh QR về server rồi upload multipart — tránh Telegram không fetch được vietqr.io
+  async function sendPhotoFromUrl(chat_id, imageUrl, extra = {}) {
+    const token = process.env.TELEGRAM_BOT_TOKEN || process.env.WEB_BOT_TOKEN;
+    if (!token) throw new Error('No bot token');
+    const imgRes = await fetch(imageUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'image/*,*/*' },
+      redirect: 'follow'
+    });
+    if (!imgRes.ok) throw new Error('Download QR HTTP ' + imgRes.status);
+    const buf = Buffer.from(await imgRes.arrayBuffer());
+    if (buf.length < 500) throw new Error('QR image too small');
+    const form = new FormData();
+    form.append('chat_id', String(chat_id));
+    form.append('parse_mode', 'HTML');
+    if (extra.caption) form.append('caption', String(extra.caption));
+    if (extra.reply_markup) form.append('reply_markup', JSON.stringify(extra.reply_markup));
+    form.append('photo', new Blob([buf], { type: 'image/jpeg' }), 'vietqr.jpg');
+    const up = await fetch('https://api.telegram.org/bot' + token + '/sendPhoto', { method: 'POST', body: form });
+    const data = await up.json().catch(() => ({}));
+    if (!up.ok || !data.ok) throw new Error(data.description || ('upload QR ' + up.status));
+    return data.result;
+  }
   const isAdmin = id => adminIds.has(String(id));
   const displayName = from => [from?.first_name, from?.last_name].filter(Boolean).join(' ') || from?.username || 'Bạn';
-  const plans = () => (options.getConfig().plans || []).filter(p => p.active !== false && Number(p.price) > 0 && Number(p.durationHours) > 0);
+  const plans = () => (options.getConfig().plans || [])
+    .map(p => ({ ...p, id: String(p.id || '').trim().toLowerCase() }))
+    .filter(p => p.id && p.active !== false && Number(p.price) > 0 && Number(p.durationHours) > 0);
   const idShort = () => crypto.randomBytes(5).toString('hex').toUpperCase();
   const decodeHtmlEntities = (str) => String(str || '')
     .replace(/&nbsp;/gi, ' ')
@@ -2900,7 +2924,7 @@ async function lookupInstagram(input) {
     const keyboard = {
       inline_keyboard: available.map(p => {
         const days = p.durationHours >= 24 ? (Math.round(p.durationHours / 24) + ' Ngày') : (p.durationHours + 'h');
-        return [{ text: `${fmt(p.price)}đ - ${days}`, callback_data: 'pay:' + p.id }];
+        return [{ text: `${fmt(p.price)}đ - ${days}`, callback_data: 'pay:' + String(p.id || '').toLowerCase() }];
       })
     };
     await send(chatId,
@@ -2963,8 +2987,23 @@ Key sẽ được gửi khi giao dịch được xác nhận.
 
   async function startPayment(chatId, fromId, planId) {
     try {
-      const plan = plans().find(p => p.id === String(planId || '').toLowerCase());
-      if (!plan) return send(chatId, '❌ Gói không tồn tại. Gõ /muakeytx để chọn lại.');
+      const want = String(planId || '').trim().toLowerCase();
+      // bỏ qua callback đặc biệt (DONE/cancel) — không phải mã gói
+      if (!want || want === 'done' || want === 'cancel' || want === 'paydone') {
+        return;
+      }
+      const list = plans();
+      let plan = list.find(p => String(p.id).toLowerCase() === want);
+      if (!plan) {
+        // fallback: khớp theo label / giá nếu id lệch
+        plan = list.find(p => String(p.label || '').toLowerCase().replace(/\s+/g, '') === want.replace(/\s+/g, ''));
+      }
+      if (!plan) {
+        const hint = list.length
+          ? ('\nGói hiện có: ' + list.map(p => '<code>' + p.id + '</code>').join(', '))
+          : '\nChưa có gói nào (admin thêm trong Index Admin → Gói giá).';
+        return send(chatId, '❌ Không tìm thấy gói <code>' + want + '</code>.' + hint + '\nGõ /muakeytx để chọn lại.');
+      }
       const config = options.getConfig() || {};
       const bankCode = String(config.bankCode || '').trim();
       const bankAccount = String(config.bankAccount || '').trim().replace(/\s+/g, '');
@@ -3030,7 +3069,7 @@ hoặc: <code>/setbank VCB 0123456789 NGUYEN VAN A</code>`);
 ⏰ Hết hạn <b>${Math.round(timeoutSec / 60)} phút</b>
 💬 @SunNetWin`;
       const kb = { inline_keyboard: [
-        [{ text: '✅ DONE — Xác nhận đã CK', callback_data: 'pay:done' }],
+        [{ text: '✅ DONE — Xác nhận đã CK', callback_data: 'cmd:paydone' }],
         [{ text: '❌ Hủy đơn', callback_data: 'cmd:cancel' }]
       ] };
 
@@ -3046,6 +3085,14 @@ hoặc: <code>/setbank VCB 0123456789 NGUYEN VAN A</code>`);
       let photoOk = false;
       for (const url of [qr, qrPrint, qrOnly]) {
         try {
+          const sent = await sendPhotoFromUrl(chatId, url, {
+            caption: '📷 <b>Quét VietQR</b>\n💰 <b>' + fmt(plan.price) + 'đ</b>\n📝 <code>' + orderId + '</code>'
+          });
+          if (sent) { photoOk = true; msgId = sent.message_id || msgId; break; }
+        } catch (e) {
+          logLine('[shop] QR upload fail: ' + String(e.message || e).slice(0, 140));
+        }
+        try {
           const sent = await sendPhoto(chatId, url, {
             caption: '📷 <b>Quét VietQR</b>\n💰 <b>' + fmt(plan.price) + 'đ</b>\n📝 <code>' + orderId + '</code>'
           });
@@ -3055,7 +3102,7 @@ hoặc: <code>/setbank VCB 0123456789 NGUYEN VAN A</code>`);
             break;
           }
         } catch (e) {
-          logLine('[shop] QR fail: ' + String(e.message || e).slice(0, 120));
+          logLine('[shop] QR url fail: ' + String(e.message || e).slice(0, 140));
         }
       }
       if (!photoOk) {
@@ -3091,12 +3138,30 @@ hoặc: <code>/setbank VCB 0123456789 NGUYEN VAN A</code>`);
     const fromId = String(cq.from?.id || '');
     try { await tg('answerCallbackQuery', { callback_query_id: cq.id }); } catch {}
     if (!chatId) return;
+    // DONE / hủy phải check TRƯỚC pay:<planId>
+    if (data === 'pay:done' || data === 'cmd:paydone') return confirmPaymentDone(chatId, fromId, cq.from);
+    if (data === 'cmd:cancel' || data === 'pay:cancel') {
+      const sessions = options.getSessions();
+      const sess = sessions[fromId];
+      if (sess && sess.type === 'payment') {
+        try {
+          if (Array.isArray(orders) && sess.orderId) {
+            const o = orders.find(x => x.id === sess.orderId);
+            if (o && o.status === 'pending') { o.status = 'cancelled'; try { saveOrders(); } catch (e) {} }
+          }
+        } catch (e) {}
+        delete sessions[fromId]; options.saveSessions(sessions);
+        return send(chatId, '🗑️ Đã hủy đơn thanh toán.\nGõ <code>/muakeytx</code> nếu muốn mua lại.');
+      }
+      return send(chatId, 'Không có đơn đang mở.');
+    }
     if (data.startsWith('pay:')) {
-      const planId = data.slice(4);
+      const planId = data.slice(4).trim().toLowerCase();
+      // pay:done đã xử lý phía trên; chặn thêm cho chắc
+      if (!planId || planId === 'done' || planId === 'cancel' || planId === 'paydone') return;
       return startPayment(chatId, fromId, planId);
     }
     if (data === 'buy_menu') return showBuyMenu(chatId);
-    if (data === 'pay:done') return confirmPaymentDone(chatId, fromId, cq.from);
     if (data === 'cmd:getkey') return startGroupKeyTask(chatId, fromId, cq.from);
     if (data === 'cmd:getkeyv2') return startGetkeyV2(chatId, fromId, cq.from);
     if (data === 'cmd:getkeyv3') {
