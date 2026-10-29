@@ -1024,6 +1024,7 @@ function startTelegramBot(options) {
   async function showStart(chatId, name, from) {
     const base = ensureHttps(process.env.PUBLIC_URL || process.env.WEB_URL || '');
     const admin = isAdmin(from && from.id);
+    if (!admin) return showUserMenu(chatId);
     let text = '';
     text += '╔══════════════════════════╗\n';
     text += '║   <b>ToolTungTung</b>   ║\n';
@@ -1035,7 +1036,8 @@ function startTelegramBot(options) {
       text += '└─ Quản lý key, giá, game và API trong Index Admin.\n\n';
     } else {
       text += '🎮 <b>TOOL DỰ ĐOÁN</b>\n';
-      text += '├─ 🎁 Key dùng thử: /getkeyv1\n';
+      text += '├─ 🎁 Key nhiệm vụ: /getkey\n';
+      text += '├─ 🔗 Key Link4M: /getkeyv2\n';
       text += '├─ 💎 Mua key: /muakeytx\n';
       text += '└─ 🔑 Xem key: /mykey\n\n';
     }
@@ -1055,39 +1057,70 @@ function startTelegramBot(options) {
   }
 
   async function showUserMenu(chatId) {
-    // Khung gọn gàng, mỗi lệnh 1 block riêng, có icon (giống mẫu)
+    // Menu khách hàng: lệnh theo đúng thứ tự hướng dẫn, mỗi lệnh trong một khung riêng.
+    const cfg = options.getConfig() || {};
+    const needPhotos = Math.max(1, Number(cfg.groupTaskPhotos) || 3);
+    const v2Hours = Math.max(0.25, Number(cfg.getkeyv2KeyHours) || 18);
+    const v3Url = String(cfg.getkeyv3Url || 'https://tool.skidvn.com/').trim();
+    const promo = String(cfg.groupPromoText || '@SunNetWin tool dự đoán TX VIP').trim();
     const text =
-`🔹 <b>TOOLTUNGTUNG · HƯỚNG DẪN</b>
+`📚 <b>HƯỚNG DẪN SỬ DỤNG BOT</b>
+🔑 <b>Lệnh /getkey</b>
+<blockquote>Bot yêu cầu đăng tin giới thiệu vào ${needPhotos} nhóm bất kỳ.
+1️⃣ Sao chép nội dung mẫu bên dưới và gửi vào từng nhóm.
+2️⃣ Chụp ảnh màn hình các bài đã gửi.
+3️⃣ Gửi đủ ${needPhotos} ảnh cho bot.
+✅ Admin duyệt xong, bot gửi key dùng thử 15 phút.
 
-📸 <b>/getkeyv1</b>
-Gửi ảnh hoàn thành nhiệm vụ, sau đó chờ Admin duyệt key dùng thử 15 phút.
+📋 <b>Nội dung mẫu:</b>
+<code>${esc(promo)}</code>
+📌 Ví dụ: <code>/getkey</code></blockquote>
 
-🔗 <b>/getkeyv2</b>
-Nhận link xác nhận. Mở link và hoàn thành bước xác nhận để lấy key.
+🔑 <b>Lệnh /getkeyv2</b>
+<blockquote>Tạo key loại 2 qua link rút gọn Link4M.
+1️⃣ Gõ lệnh và mở link bot gửi.
+2️⃣ Hoàn tất các bước trên trang Link4M.
+3️⃣ Trang xác nhận sẽ hiện key; nếu cần, gõ <code>done</code> trong bot.
+⏱ Thời hạn key: <b>${v2Hours} giờ</b> (cấu hình Admin).
+📌 Ví dụ: <code>/getkeyv2</code></blockquote>
 
-🔐 <b>/nhapkey KEY</b>
-Liên kết key với Telegram và mở trang công cụ.
+🔑 <b>Lệnh /getkeyv3</b>
+<blockquote>Phương án dự phòng nếu /getkey hoặc /getkeyv2 gặp lỗi.
+Mở trang nhận key loại 3 theo đường dẫn Admin đã cấu hình. Thời hạn tham khảo 18 giờ; kiểm tra lại trên trang ngoài.
+🌐 Trang hiện tại: ${/^https:\/\//i.test(v3Url) ? esc(v3Url) : 'chưa được Admin cấu hình'}
+⚠️ Đây là dịch vụ ngoài; bot không tự xác minh key do trang ngoài cấp.
+📌 Ví dụ: <code>/getkeyv3</code></blockquote>
 
-💎 <b>/muakeytx</b>
-Xem các gói đang bán, giá và cách thanh toán.
+💳 <b>Lệnh /muakeytx</b>
+<blockquote>Xem bảng giá key chính thức.
+1️⃣ Chọn gói và kiểm tra giá, thời hạn.
+2️⃣ Làm theo hướng dẫn thanh toán.
+3️⃣ Gửi bill cho bot; key được gửi sau khi Admin duyệt.
+📌 Ví dụ: <code>/muakeytx</code></blockquote>
 
-🪪 <b>/mykey</b>
-Kiểm tra key đã liên kết với tài khoản.
+🔐 <b>/nhapkey KEY</b> — Gắn key vào Telegram, nhận nút mở Index tự điền key.
+🪪 <b>/mykey</b> — Xem key đã liên kết và thời gian còn lại.
 
-📝 <b>/feedback</b>
-Gửi ảnh kèm nội dung góp ý để Admin xem xét.
+🎵 <b>Lệnh TikTok</b>
+<blockquote><b>/infotiktok {username}</b> — Xem thông tin kênh.
+Ví dụ: <code>/infotiktok ngth.2010</code>
+⏳ Cooldown: 30 giây.</blockquote>
+<blockquote><b>/videotiktok {link|id}</b> — Xem thông tin video.
+Ví dụ: <code>/videotiktok https://www.tiktok.com/@tiktok/video/7231338487075638570</code>
+⏳ Cooldown: 30 giây.</blockquote>
 
-📱 <b>/infotiktok username</b> · 🎬 <b>/videotiktok link</b>
-Tra cứu thông tin TikTok · mỗi lệnh cách nhau 30 giây.
+📝 <b>/feedback</b> — Gửi góp ý kèm ảnh và nội dung để Admin duyệt.
+❌ <b>/cancel</b> — Dừng thao tác đang thực hiện.
 
-Hỗ trợ: <b>@SunNetWin</b>`;
-    await send(chatId, text, {
-      reply_markup: { inline_keyboard: [
-        [{ text: '💎 Mua key', callback_data: 'buy_menu' }, { text: '🔗 Getkey V2', callback_data: 'cmd:getkeyv2' }],
-        [{ text: '🎁 Key free V1', callback_data: 'cmd:getkey' }, { text: '🔑 Key của tôi', callback_data: 'cmd:mykey' }],
-        [{ text: '📝 Gửi góp ý', callback_data: 'cmd:feedback' }]
-      ] }
-    });
+💬 Hỗ trợ: <b>@SunNetWin</b>`;
+    const rows = [
+      [{ text: '💎 Bảng giá key', callback_data: 'buy_menu' }, { text: '🔗 Getkey V2', callback_data: 'cmd:getkeyv2' }],
+      [{ text: '🎁 Key nhiệm vụ', callback_data: 'cmd:getkey' }, { text: '🔑 Key của tôi', callback_data: 'cmd:mykey' }],
+      [{ text: '🌐 Key dự phòng V3', callback_data: 'cmd:getkeyv3' }, { text: '📝 Gửi góp ý', callback_data: 'cmd:feedback' }]
+    ];
+    const appBase = ensureHttps(process.env.PUBLIC_URL || process.env.WEB_URL || '');
+    if (appBase) rows.unshift([{ text: '🎮 Mở Index', web_app: { url: appBase.endsWith('.html') ? appBase : appBase + '/' } }]);
+    await send(chatId, text, { reply_markup: { inline_keyboard: rows } });
   }
 
   async function sendHelpAdmin(chatId, page) {
@@ -1356,7 +1389,7 @@ Bấm nút duyệt / từ chối:`;
     const sessions = options.getSessions();
     const session = sessions[userId];
     if (!session || session.type !== mode) {
-      await send(message.chat.id, '⚠️ Gõ /getkeyv1 hoặc /muakeytx trước khi gửi ảnh.');
+      await send(message.chat.id, '⚠️ Gõ /getkey hoặc /muakeytx trước khi gửi ảnh.');
       return;
     }
     const photos = message.photo || [];
@@ -1370,7 +1403,7 @@ Bấm nút duyệt / từ chối:`;
     // Timeout check for group task
     if (mode === 'group' && session.startedAt && (Date.now() - session.startedAt) > timeoutSec * 1000) {
       delete sessions[userId]; options.saveSessions(sessions);
-      await send(message.chat.id, `⏰ Hết ${timeoutSec} giây. Gõ /getkeyv1 để làm lại.`);
+      await send(message.chat.id, `⏰ Hết ${timeoutSec} giây. Gõ /getkey để làm lại.`);
       return;
     }
 
@@ -1531,7 +1564,7 @@ ${promo ? `📌 <b>Câu cần sao chép:</b>\n<code>${esc(promo)}</code>\n` : ''
     const cfg = options.getConfig() || {};
     const maxPerDay = Number(cfg.getkeyv2MaxPerDay) || 2;
     const linkTtlMin = Number(cfg.getkeyv2LinkMinutes) || 5;
-    const keyTtlMin = Number(cfg.indexKeyMinutes) || 30;
+    const keyTtlHours = Number(cfg.getkeyv2KeyHours) || 18;
     const day = bangkokDayKey();
     const uid = String(fromId);
     let rec = getkeyv2Uses[uid];
@@ -1614,7 +1647,7 @@ ${esc(shortLink)}
 Hệ thống <b>tự biết</b> khi bạn vượt xong (mở trang xác nhận) và gửi key tại đây.
 
 Nếu đã vượt mà chưa thấy key: gõ <code>done</code>.
-⏳ Còn <b>${linkTtlMin} phút</b> · Key sống <b>${keyTtlMin} phút</b>
+⏳ Link hiệu lực <b>${linkTtlMin} phút</b> · Key sống <b>${keyTtlHours} giờ</b>
 ━━━━━━━━━━━━━━━━━━━━
 @SunNetWin`);
   }
@@ -1647,7 +1680,7 @@ Nếu đã vượt mà chưa thấy key: gõ <code>done</code>.
     }
     const cfg = options.getConfig() || {};
     const maxPerDay = Number(cfg.getkeyv2MaxPerDay) || 2;
-    const keyTtlMin = Number(cfg.indexKeyMinutes) || 30;
+    const keyTtlHours = Number(cfg.getkeyv2KeyHours) || 18;
     const day = bangkokDayKey();
     let rec = getkeyv2Uses[uid];
     if (!rec || rec.day !== day) {
@@ -1664,8 +1697,8 @@ Nếu đã vượt mà chưa thấy key: gõ <code>done</code>.
     try {
       if (typeof options.createKey === 'function') {
         const issued = options.createKey({
-          label: `Index Key · ${keyTtlMin}p · TG ${uid}`,
-          durationHours: Math.max(0.25, keyTtlMin / 60),
+          label: `Index Key · ${keyTtlHours}h · TG ${uid}`,
+          durationHours: keyTtlHours,
           deviceLimit: 1,
           source: 'getkeyv2',
           telegramId: uid
@@ -1682,8 +1715,8 @@ Nếu đã vượt mà chưa thấy key: gõ <code>done</code>.
         if (typeof options.createKey === 'function') {
           const issued2 = options.createKey({
             key: plainKey,
-            label: `Index Key · ${keyTtlMin}p · TG ${uid}`,
-            durationHours: Math.max(0.25, keyTtlMin / 60),
+            label: `Index Key · ${keyTtlHours}h · TG ${uid}`,
+            durationHours: keyTtlHours,
             deviceLimit: 1,
             source: 'getkeyv2-idx',
             telegramId: uid
@@ -1694,7 +1727,7 @@ Nếu đã vượt mà chưa thấy key: gõ <code>done</code>.
     }
 
     // Đăng ký Index Key map (auth cũng nhận IDX-...)
-    const expiresAt = Date.now() + keyTtlMin * 60 * 1000;
+    const expiresAt = Date.now() + keyTtlHours * 60 * 60 * 1000;
     indexKeys[indexKey] = {
       telegramId: uid,
       createdAt: Date.now(),
@@ -1739,7 +1772,7 @@ Nếu đã vượt mà chưa thấy key: gõ <code>done</code>.
 
 <code>${esc(plainKey)}</code>
 
-⏱ Hết hạn: <b>${keyTtlMin} phút</b> · 1 thiết bị
+⏱ Hết hạn: <b>${keyTtlHours} giờ</b> · 1 thiết bị
 
 📋 <b>Cách vào Index:</b>
 1. Bấm <b>📋 Sao chép Key</b> (hoặc giữ dòng key ở trên)
@@ -2910,6 +2943,14 @@ async function lookupInstagram(input) {
     if (data === 'buy_menu') return showBuyMenu(chatId);
     if (data === 'cmd:getkey') return startGroupKeyTask(chatId, fromId, cq.from);
     if (data === 'cmd:getkeyv2') return startGetkeyV2(chatId, fromId, cq.from);
+    if (data === 'cmd:getkeyv3') {
+      const cfg = options.getConfig() || {};
+      const rawUrl = String(cfg.getkeyv3Url || 'https://tool.skidvn.com/').trim();
+      let safeUrl = '';
+      try { const u = new URL(rawUrl); if (u.protocol === 'https:') safeUrl = u.toString(); } catch (_) {}
+      if (!safeUrl) return send(chatId, '⚠️ Link dự phòng V3 chưa hợp lệ. Nhờ Admin kiểm tra mục Hệ thống → Link nhận key V3.');
+      return send(chatId, '🔑 <b>GETKEY V3 · LINK DỰ PHÒNG</b>\nMở trang bên dưới và làm theo hướng dẫn của dịch vụ (thời hạn theo trang, hướng dẫn hiện tại ghi 18 giờ).\n⚠️ Dịch vụ ngoài tự phát hành key; bot không xác minh key ngoại.\nNếu link lỗi, dùng /getkey hoặc /getkeyv2.', { reply_markup: { inline_keyboard: [[{ text: '🌐 Mở trang nhận key V3', url: safeUrl }]] } });
+    }
     if (data === 'cmd:feedback') {
       const sessions = options.getSessions(); sessions[fromId] = { type: 'feedback', startedAt: Date.now() }; options.saveSessions(sessions);
       return send(chatId, '📝 <b>GỬI GÓP Ý</b>\nGửi một ảnh kèm nội dung trong phần chú thích ảnh. Admin sẽ xem trước khi đăng lên kênh.');
@@ -3162,7 +3203,7 @@ async function lookupInstagram(input) {
       if (session?.type === 'payment') return createProofRequest(message, 'payment');
       if (session?.type === 'feedback') return createProofRequest(message, 'feedback');
       if (session?.type === 'getkeyv2') return completeGetkeyV2(chatId, fromId);
-      return send(chatId, '⚠️ Gõ /getkeyv1 hoặc /getkeyv2 hoặc /muakeytx trước.');
+      return send(chatId, '⚠️ Gõ /getkey, /getkeyv2 hoặc /muakeytx trước.');
     }
 
     if (!text) return;
@@ -3170,7 +3211,7 @@ async function lookupInstagram(input) {
     // Admin commands are web-only. Telegram is reserved for customer key purchase and delivery.
     if (text.startsWith('/') && isAdmin(fromId)) {
       const adminCmd = text.split(/\s+/)[0].toLowerCase().replace(/^\//, '').split('@')[0];
-      const customerCommands = new Set(['start','help','muakeytx','buy','mykey','getkeyv1','getkey','cancel']);
+      const customerCommands = new Set(['start','help','menu','muakeytx','buy','pay','mykey','my_key','getkey','getkeyv1','getkeyv2','getkeyv3','nhapkey','activate','feedback','infotiktok','videotiktok','cancel','support','hotro','done','id','myid']);
       if (!customerCommands.has(adminCmd)) return send(chatId, '🛠 Quản lý đã chuyển sang Index Admin: https://botvippro-production-0b00.up.railway.app/');
     }
 
@@ -3181,9 +3222,9 @@ async function lookupInstagram(input) {
 
     // Bot chỉ là Key Center; mọi cấu hình/quản trị nằm trong Index Admin.
     // Also allow TikTok lookup + getkeyv2 + done
-    const keyCenterCommands = new Set(['start','menu','help','getkeyv1','getkey','getkeyv2','nhapkey','activate','muakeytx','buy','pay','mykey','my_key','cancel','support','hotro','feedback','infotiktok','videotiktok','done']);
+    const keyCenterCommands = new Set(['start','menu','help','getkey','getkeyv1','getkeyv2','getkeyv3','nhapkey','activate','muakeytx','buy','pay','mykey','my_key','cancel','support','hotro','feedback','infotiktok','videotiktok','done']);
     if (!keyCenterCommands.has(cmd) && !['done','xong','hoanthanh'].includes(text.toLowerCase().trim())) {
-      return send(chatId, '🔑 <b>TOOLTUNGTUNG · KEY CENTER</b>\n\n🎁 /getkeyv1 · 🔗 /getkeyv2 · 🔐 /nhapkey · 💎 /muakeytx · 🔑 /mykey\n📝 /feedback · 📱 /infotiktok · /videotiktok\nHỗ trợ: @SunNetWin');
+      return showUserMenu(chatId);
     }
 
     // Complete getkeyv2 by text "done"
@@ -3209,7 +3250,7 @@ async function lookupInstagram(input) {
         const planId = payload.replace(/^buy[_-]/i, '').toLowerCase();
         return startPayment(chatId, fromId, planId);
       }
-      if (['trial', 'getkeyv1', 'keyfree'].includes(payload.toLowerCase())) return startGroupKeyTask(chatId, fromId, from);
+      if (['trial', 'getkey', 'getkeyv1', 'keyfree'].includes(payload.toLowerCase())) return startGroupKeyTask(chatId, fromId, from);
       if (['feedback', 'gopy'].includes(payload.toLowerCase())) { const ss = options.getSessions(); ss[fromId] = { type: 'feedback', startedAt: Date.now() }; options.saveSessions(ss); return send(chatId, '📝 <b>Gửi góp ý</b>\nGửi 1 ảnh kèm nội dung ở phần chú thích ảnh. Admin sẽ xem trước khi đăng.'); }
       return showStart(chatId, displayName(from), from);
     }
@@ -3225,8 +3266,18 @@ async function lookupInstagram(input) {
       return send(chatId, `⏳ <b>${pending.length} yêu cầu</b>\n` + pending.map(r => `• #${r.id} ${r.type === 'payment' ? '💳' : r.type === 'reset' ? '🔄' : '🎯'}`).join('\n'));
     }
 
-    if (cmd === 'getkeyv1') {
+    if (cmd === 'getkey' || cmd === 'getkeyv1') {
       return startGroupKeyTask(chatId, fromId, from);
+    }
+
+    // ===== /getkeyv3 — backup URL configured by Admin; this third-party site issues its own key =====
+    if (cmd === 'getkeyv3') {
+      const cfg = options.getConfig() || {};
+      const rawUrl = String(cfg.getkeyv3Url || 'https://tool.skidvn.com/').trim();
+      let safeUrl = '';
+      try { const u = new URL(rawUrl); if (u.protocol === 'https:') safeUrl = u.toString(); } catch (_) {}
+      if (!safeUrl) return send(chatId, '⚠️ Link dự phòng V3 chưa hợp lệ. Nhờ Admin kiểm tra mục Hệ thống → Link nhận key V3.');
+      return send(chatId, `🔑 <b>GETKEY V3 · LINK DỰ PHÒNG</b>\n━━━━━━━━━━━━━━━━━━━━\nMở trang dự phòng bên dưới và làm theo hướng dẫn của dịch vụ.\n⚠️ Đây là dịch vụ ngoài; bot không xác minh hoặc tự gia hạn key do trang đó cấp.\nNếu link lỗi, dùng <code>/getkey</code> hoặc <code>/getkeyv2</code>.\n\n@SunNetWin`, { reply_markup: { inline_keyboard: [[{ text: '🌐 Mở trang nhận key V3', url: safeUrl }]] } });
     }
 
     // ===== /getkeyv2 — Link4M + Index Key (max 2/day) =====
@@ -3331,9 +3382,10 @@ Hoặc mở Index → dán key → UNLOCK.
     }
 
     if (cmd === 'videotiktok' || cmd === 'videotik') {
-      const input = argText || args.join(' ');
+      let input = argText || args.join(' ');
+      if (/^\d{10,30}$/.test(input)) input = 'https://www.tiktok.com/video/' + input;
       if (!input || !/tiktok\.com/i.test(input)) {
-        return send(chatId, '📌 Dùng: <code>/videotiktok {link video}</code>\nVD: /videotiktok https://www.tiktok.com/@user/video/123...');
+        return send(chatId, '📌 Dùng: <code>/videotiktok {link hoặc ID}</code>\nVD link: <code>/videotiktok https://www.tiktok.com/@user/video/7231338487075638570</code>\nVD ID: <code>/videotiktok 7231338487075638570</code>');
       }
       const cdKey = 'ttv_' + fromId;
       const last = userCmdLog.get(cdKey) || 0;
@@ -3617,6 +3669,21 @@ ${info.private ? '🔒 Private' : '🌐 Public'}
     notifyAdmins,
     stop: () => { stopped = true; }
   };
+  // Telegram command keyboard: keep the main customer commands aligned with /help.
+  tg('setMyCommands', { commands: [
+    { command: 'start', description: 'Mở công cụ' },
+    { command: 'help', description: 'Hướng dẫn lệnh' },
+    { command: 'getkey', description: 'Key dùng thử qua nhiệm vụ' },
+    { command: 'getkeyv2', description: 'Nhận key qua Link4M' },
+    { command: 'getkeyv3', description: 'Link nhận key dự phòng' },
+    { command: 'muakeytx', description: 'Bảng giá và mua key' },
+    { command: 'nhapkey', description: 'Kích hoạt key' },
+    { command: 'mykey', description: 'Kiểm tra key' },
+    { command: 'infotiktok', description: 'Thông tin kênh TikTok' },
+    { command: 'videotiktok', description: 'Thông tin video TikTok' },
+    { command: 'feedback', description: 'Gửi góp ý' },
+    { command: 'cancel', description: 'Hủy thao tác' }
+  ] }).catch(e => console.warn('[telegram] setMyCommands:', e.message));
   loop();
   console.log(`[telegram] cmd-only bot started; admins=${adminIds.size}`);
   return bot;
@@ -4451,6 +4518,8 @@ let botSettings = loadJSON(SETTINGS_FILE, null) || {
   bankCode: '', bankAccount: '', bankAccountName: '', plans: [],
   getkeyv2MaxPerDay: 2,
   getkeyv2LinkMinutes: 5,
+  getkeyv2KeyHours: 18,
+  getkeyv3Url: 'https://tool.skidvn.com/',
   indexKeyMinutes: 30,
   link4mBaseUrl: 'https://link4m.co/api-shorten/v2',
   link4mApiToken: '',
@@ -4527,6 +4596,8 @@ function normalizeSettings(value) {
     // ===== GETKEYV2 / Index Key configurable =====
     getkeyv2MaxPerDay: Math.min(20, Math.max(1, Number(v.getkeyv2MaxPerDay ?? 2))),
     getkeyv2LinkMinutes: Math.min(30, Math.max(1, Number(v.getkeyv2LinkMinutes ?? 5))),
+    getkeyv2KeyHours: Math.min(168, Math.max(0.25, Number(v.getkeyv2KeyHours ?? 18))),
+    getkeyv3Url: String(v.getkeyv3Url || 'https://tool.skidvn.com/').trim().slice(0, 300),
     indexKeyMinutes: Math.min(180, Math.max(5, Number(v.indexKeyMinutes ?? 30))),
     link4mBaseUrl: String(v.link4mBaseUrl || 'https://link4m.co/api-shorten/v2').trim().slice(0, 200),
     link4mApiToken: String(v.link4mApiToken || '').trim().slice(0, 120),
@@ -4649,12 +4720,12 @@ app.get('/api/link4m/pass', async (req, res) => {
   const uidQ = String(req.query.u || req.query.uid || '').trim();
 
   const page = (opts) => {
-    const { title, ok, key, minutes, err } = opts;
+    const { title, ok, key, minutes, hours, err } = opts;
     const keyBlock = key ? `
       <div class="keybox" id="keybox">${String(key).replace(/</g,'&lt;')}</div>
       <button type="button" class="btn" id="btnCopy">📋 Sao chép Key</button>
       <p class="tiny" id="copied" hidden>Đã sao chép!</p>
-      <p class="hint">Hết hạn khoảng <b>${minutes || 30} phút</b> · Dùng 1 thiết bị</p>
+      <p class="hint">Hết hạn khoảng <b>${hours != null ? hours + ' giờ' : (minutes || 30) + ' phút'}</b> · Dùng 1 thiết bị</p>
       <a class="link" href="/">Mở trang Index để UNLOCK →</a>
       <script>
         (function(){
@@ -4746,7 +4817,7 @@ h1{font-size:20px;margin:0 0 8px;font-weight:700}
   } catch (_) {}
 
   const cfg = (typeof botSettings !== 'undefined' && botSettings) ? botSettings : {};
-  const keyTtlMin = Number(cfg.indexKeyMinutes) || 30;
+  const keyTtlHours = Number(cfg.getkeyv2KeyHours) || 18;
   const maxPerDay = Number(cfg.getkeyv2MaxPerDay) || 2;
 
   // Phát key một lần — lưu trên pending để F5 vẫn xem lại được trong phiên
@@ -4766,8 +4837,8 @@ h1{font-size:20px;margin:0 0 8px;font-weight:700}
     }
     try {
       const issued = createKey({
-        label: 'Index Key · ' + keyTtlMin + 'p · TG ' + uid,
-        durationHours: Math.max(0.25, keyTtlMin / 60),
+        label: 'Index Key · ' + keyTtlHours + 'h · TG ' + uid,
+        durationHours: keyTtlHours,
         deviceLimit: 1,
         source: 'getkeyv2-page',
         telegramId: uid || null
@@ -4808,7 +4879,7 @@ h1{font-size:20px;margin:0 0 8px;font-weight:700}
     title: 'Key của bạn',
     ok: true,
     key: pending.plainKey,
-    minutes: keyTtlMin
+    hours: keyTtlHours
   }));
 });
 
@@ -4885,6 +4956,7 @@ app.post('/api/auth/telegram-webapp', express.json(), (req, res) => {
 
 
 app.get('/api/public/config', (req, res) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   const games = (Array.isArray(gameConfigs) ? gameConfigs : []).filter(g => g.visible !== false).map(g => ({
     id: g.id, label: g.label || g.id, group: g.group || 'tx', brand: g.brand || g.id,
     brandLabel: g.brandLabel || g.label || g.id, variant: g.variant || '', playUrl: g.playUrl || '',
@@ -5398,7 +5470,7 @@ app.post('/api/admin/games', requireAdmin, (req, res) => {
     iconUrl: String(req.body?.iconUrl || '').trim().slice(0, 500),
     playMode: req.body?.playMode === 'external' ? 'external' : 'embed',
     enabled: req.body?.enabled !== false, visible: req.body?.visible !== false,
-    comingSoon: !!req.body?.comingSoon
+    comingSoon: !!req.body?.comingSoon && !String(req.body?.playUrl || '').trim()
   };
   gameConfigs.push(config); saveGameConfigs(); FEEDS[id] = createFeed(config); logLine(`game added: ${id}`);
   res.json({ ok: true, game: config });
@@ -5425,6 +5497,7 @@ app.patch('/api/admin/games/:id', requireAdmin, (req, res) => {
   if (req.body?.icon !== undefined) config.icon = String(req.body.icon || '').trim().slice(0, 40);
   if (req.body?.iconUrl !== undefined) config.iconUrl = String(req.body.iconUrl || '').trim().slice(0, 500);
   if (req.body?.comingSoon !== undefined) config.comingSoon = !!req.body.comingSoon;
+  if (req.body?.playUrl !== undefined && String(req.body.playUrl || '').trim()) config.comingSoon = false;
   if (req.body?.visible !== undefined) config.visible = req.body.visible !== false;
   if (req.body?.image !== undefined && req.body?.iconUrl === undefined) config.iconUrl = String(req.body.image || '').trim().slice(0, 500);
   if (FEEDS[config.id]) {
@@ -5840,6 +5913,7 @@ app.get('/api/shop/my-key', (req, res) => {
 
 // Lấy danh sách gói key (admin chỉnh trên bot → cửa hàng tự cập nhật)
 app.get('/api/shop/plans', (req, res) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   const plans = (botSettings.plans || []).filter(function(p){ return p.active !== false && Number(p.price) > 0 && Number(p.durationHours) > 0; });
   const rawBot = String(botSettings.telegramBotUrl || '').trim();
   const username = String(process.env.TELEGRAM_BOT_USERNAME || botSettings.telegramUsername || '').trim().replace(/^@/, '').replace(/^https?:\/\/t\.me\//i, '');
