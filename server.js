@@ -1024,78 +1024,96 @@ function startTelegramBot(options) {
   async function showStart(chatId, name, from) {
     const base = ensureHttps(process.env.PUBLIC_URL || process.env.WEB_URL || '');
     const admin = isAdmin(from && from.id);
+    // User thường: menu lệnh (UI giống ảnh). Admin: chào + link Admin (không web_app).
+    if (!admin) return showUserMenu(chatId);
     let text = '';
     text += '╔══════════════════════════╗\n';
     text += '║   <b>ToolTungTung</b>   ║\n';
     text += '║     <b>CÔNG CỤ DỰ ĐOÁN</b>     ║\n';
     text += '╚══════════════════════════╝\n\n';
-    text += '👋 Xin chào <b>' + esc(name) + '</b>\n\n';
-    if (admin) {
-      text += '🛠 <b>QUẢN TRỊ HỆ THỐNG</b>\n';
-      text += '└─ Quản lý key, giá, game và API trong Index Admin.\n\n';
-    } else {
-      text += '🎮 <b>TOOL DỰ ĐOÁN</b>\n';
-      text += '├─ 🎁 Key dùng thử: /getkeyv1\n';
-      text += '├─ 💎 Mua key: /muakeytx\n';
-      text += '└─ 🔑 Xem key: /mykey\n\n';
-    }
+    text += '👋 Xin chào Admin <b>' + esc(name) + '</b>\n\n';
+    text += '🛠 <b>QUẢN TRỊ HỆ THỐNG</b>\n';
+    text += '└─ Quản lý key, giá, game và API trong Index Admin.\n\n';
+    text += '📖 User menu: /menu · /help\n';
     text += '━━━━━━━━━━━━━━━━━━━━━━━━\n';
     text += '💬 Hỗ trợ: <b>@SunNetWin</b>';
+    const rows = [];
+    if (base) {
+      const root = base.replace(/\/+$/, '');
+      // User Index = Mini App; Admin panel = link thường (không web_app)
+      rows.push([{ text: '🎮 Mini App (User Index)', web_app: { url: root + '/' } }]);
+      rows.push([{ text: '🛠 Mở Index Admin', url: root + '/admin' }]);
+    }
+    const extra = { reply_markup: { inline_keyboard: rows } };
     if (!base) {
       text += '\n\nTrang công cụ hiện chưa mở được. Vui lòng thử lại sau hoặc liên hệ @SunNetWin.';
-    } else {
-      text += '\n\n🌐 Trang công cụ: ' + '<a href=\"' + esc(base.endsWith('.html') ? base : base + '/') + '\">Mở trang web</a>';
     }
-    if (admin) text += '\n🛠 Trang Admin: <a href=\"https://botvippro-production-0b00.up.railway.app/admin\">Mở Admin</a>';
-    await send(chatId, text);
+    await send(chatId, text, extra);
   }
 
   async function showUserMenu(chatId) {
-    // Menu khách hàng: mỗi lệnh nằm trong một blockquote riêng để dễ đọc trên điện thoại.
+    const cfg = options.getConfig() || {};
+    const needPhotos = Math.max(1, Number(cfg.groupTaskPhotos) || 3);
+    const v2Hours = Math.max(0.25, Number(cfg.getkeyv2KeyHours) || 18);
+    const promo = String(cfg.groupPromoText || '@SunNetWin tool dự đoán TX VIP').trim();
     const text =
-`🎵 <b>LỆNH TOOL TUNGTUNG</b>
-<i>Chọn lệnh cần dùng. Các lệnh dưới đây dành cho khách hàng.</i>
+`📖 <b>Hướng dẫn sử dụng bot:</b>
 
-<blockquote>🎁 <b>/getkeyv1</b> — Nhận key dùng thử
-Gửi ảnh hoàn thành nhiệm vụ quảng bá. Key chỉ được cấp sau khi Admin duyệt.
-⏱ Thời hạn key: 15 phút (nếu gói nhiệm vụ đang bật).</blockquote>
+🔑 <b>Lệnh /getkey:</b>
+<blockquote>Bot sẽ yêu cầu bạn rải quảng cáo vào ${needPhotos} nhóm bất kì.
+1️⃣ Sao chép nội dung mẫu và gửi vào ${needPhotos} nhóm
+2️⃣ Chụp ${needPhotos} ảnh và gửi cho bot
+3️⃣ Admin duyệt và gửi key dùng thử
 
-<blockquote>🔗 <b>/getkeyv2</b> — Nhận key qua Link4M
-Mở liên kết bot gửi, hoàn thành bước xác nhận rồi lấy key ở trang kết quả.
+📋 Nội dung mẫu:
+<code>${esc(promo)}</code>
+📌 Ví dụ: <code>/getkey</code></blockquote>
+
+🔑 <b>Lệnh /getkeyv2:</b>
+<blockquote>Tạo key loại 2 qua link rút gọn Link4M (<b>${v2Hours} giờ</b>).
+1️⃣ Gõ lệnh → mở link bot gửi
+2️⃣ Hoàn tất bước trên trang
+3️⃣ Trang hiện key; gõ <code>done</code> nếu cần
+⚠️ Link rút gọn có thể bị lỗi 10-20%.
 📌 Ví dụ: <code>/getkeyv2</code></blockquote>
 
-<blockquote>🔐 <b>/nhapkey KEY</b> — Kích hoạt key
-Liên kết key với tài khoản Telegram và nhận nút mở Index.
-📌 Ví dụ: <code>/nhapkey TTU-XXXX-XXXX</code></blockquote>
+💳 <b>Lệnh /muakeytx</b>
+<blockquote>Xem bảng giá · chuyển khoản đúng nội dung
+Sau khi CK gõ <b>DONE</b> để hệ thống xác nhận và gửi yêu cầu duyệt.
+📌 Ví dụ: <code>/muakeytx</code></blockquote>
 
-<blockquote>💎 <b>/muakeytx</b> — Xem bảng giá
-Chọn gói, xem số tiền và hướng dẫn thanh toán. Sau khi thanh toán, gửi bill theo hướng dẫn trong bot.</blockquote>
+🔐 <b>/nhapkey KEY</b> — Gắn key → mở Mini App tự điền
+🪪 <b>/mykey</b> — Xem key đã liên kết
+🔄 <b>/resetkeytx KEY</b> — Xoá thiết bị đã đăng nhập (khi max TB)
 
-<blockquote>🪪 <b>/mykey</b> — Key của tôi
-Kiểm tra trạng thái key đã liên kết và thời gian còn lại.</blockquote>
-
-<blockquote>📱 <b>/infotiktok {username}</b> — Thông tin kênh TikTok
+🎵 <b>Lệnh TikTok:</b>
+<blockquote><b>/infotiktok {username}</b> — Thông tin kênh
 Ví dụ: <code>/infotiktok ngth.2010</code>
-⏳ Cooldown: 30 giây.</blockquote>
-
-<blockquote>🎬 <b>/videotiktok {link}</b> — Thông tin video TikTok
+⏳ Cooldown: 30 giây</blockquote>
+<blockquote><b>/videotiktok {link|id}</b> — Thông tin video
 Ví dụ: <code>/videotiktok https://www.tiktok.com/@tiktok/video/7231338487075638570</code>
-⏳ Cooldown: 30 giây.</blockquote>
+⏳ Cooldown: 30 giây</blockquote>
 
-<blockquote>📝 <b>/feedback</b> — Gửi góp ý
-Gửi nội dung góp ý kèm ảnh minh chứng nếu có. Yêu cầu sẽ được chuyển Admin duyệt.</blockquote>
+🔍 <b>Check MXH:</b>
+<blockquote><b>/checkfb {user|link}</b> — Facebook
+Ví dụ: <code>/checkfb zuck</code></blockquote>
+<blockquote><b>/checkig {@user}</b> — Instagram
+Ví dụ: <code>/checkig instagram</code></blockquote>
+<blockquote><b>/checkyt {@channel|link}</b> — YouTube
+Ví dụ: <code>/checkyt @MrBeast</code></blockquote>
 
-<blockquote>❌ <b>/cancel</b> — Hủy thao tác hiện tại
-Dùng khi muốn dừng bước nhận key hoặc thanh toán đang thực hiện.</blockquote>
+📝 <b>/feedback</b> — Góp ý (1 ảnh + caption)
+❌ <b>/cancel</b> — Hủy thao tác
+📢 <b>/guide</b> · <b>/support</b>
 
 💬 Hỗ trợ: <b>@SunNetWin</b>`;
-    await send(chatId, text, {
-      reply_markup: { inline_keyboard: [
-        [{ text: '💎 Bảng giá', callback_data: 'buy_menu' }, { text: '🔗 Getkey V2', callback_data: 'cmd:getkeyv2' }],
-        [{ text: '🎁 Key dùng thử', callback_data: 'cmd:getkey' }, { text: '🔑 Key của tôi', callback_data: 'cmd:mykey' }],
-        [{ text: '📝 Gửi góp ý', callback_data: 'cmd:feedback' }]
-      ] }
-    });
+    const rows = [];
+    const appBase = ensureHttps(process.env.PUBLIC_URL || process.env.WEB_URL || '');
+    if (appBase) {
+      const mini = appBase.endsWith('.html') ? appBase : (appBase.replace(/\/+$/, '') + '/');
+      rows.push([{ text: '🎮 Mở Mini App', web_app: { url: mini } }]);
+    }
+    await send(chatId, text, rows.length ? { reply_markup: { inline_keyboard: rows } } : {});
   }
 
   async function sendHelpAdmin(chatId, page) {
@@ -1364,7 +1382,7 @@ Bấm nút duyệt / từ chối:`;
     const sessions = options.getSessions();
     const session = sessions[userId];
     if (!session || session.type !== mode) {
-      await send(message.chat.id, '⚠️ Gõ /getkeyv1 hoặc /muakeytx trước khi gửi ảnh.');
+      await send(message.chat.id, '⚠️ Gõ /getkey hoặc /muakeytx trước khi gửi ảnh.');
       return;
     }
     const photos = message.photo || [];
@@ -1378,7 +1396,7 @@ Bấm nút duyệt / từ chối:`;
     // Timeout check for group task
     if (mode === 'group' && session.startedAt && (Date.now() - session.startedAt) > timeoutSec * 1000) {
       delete sessions[userId]; options.saveSessions(sessions);
-      await send(message.chat.id, `⏰ Hết ${timeoutSec} giây. Gõ /getkeyv1 để làm lại.`);
+      await send(message.chat.id, `⏰ Hết ${timeoutSec} giây. Gõ /getkey để làm lại.`);
       return;
     }
 
@@ -1539,7 +1557,7 @@ ${promo ? `📌 <b>Câu cần sao chép:</b>\n<code>${esc(promo)}</code>\n` : ''
     const cfg = options.getConfig() || {};
     const maxPerDay = Number(cfg.getkeyv2MaxPerDay) || 2;
     const linkTtlMin = Number(cfg.getkeyv2LinkMinutes) || 5;
-    const keyTtlMin = Number(cfg.indexKeyMinutes) || 30;
+    const keyTtlHours = Number(cfg.getkeyv2KeyHours) || 18;
     const day = bangkokDayKey();
     const uid = String(fromId);
     let rec = getkeyv2Uses[uid];
@@ -1622,7 +1640,7 @@ ${esc(shortLink)}
 Hệ thống <b>tự biết</b> khi bạn vượt xong (mở trang xác nhận) và gửi key tại đây.
 
 Nếu đã vượt mà chưa thấy key: gõ <code>done</code>.
-⏳ Còn <b>${linkTtlMin} phút</b> · Key sống <b>${keyTtlMin} phút</b>
+⏳ Link hiệu lực <b>${linkTtlMin} phút</b> · Key sống <b>${keyTtlHours} giờ</b>
 ━━━━━━━━━━━━━━━━━━━━
 @SunNetWin`);
   }
@@ -1655,7 +1673,7 @@ Nếu đã vượt mà chưa thấy key: gõ <code>done</code>.
     }
     const cfg = options.getConfig() || {};
     const maxPerDay = Number(cfg.getkeyv2MaxPerDay) || 2;
-    const keyTtlMin = Number(cfg.indexKeyMinutes) || 30;
+    const keyTtlHours = Number(cfg.getkeyv2KeyHours) || 18;
     const day = bangkokDayKey();
     let rec = getkeyv2Uses[uid];
     if (!rec || rec.day !== day) {
@@ -1672,8 +1690,8 @@ Nếu đã vượt mà chưa thấy key: gõ <code>done</code>.
     try {
       if (typeof options.createKey === 'function') {
         const issued = options.createKey({
-          label: `Index Key · ${keyTtlMin}p · TG ${uid}`,
-          durationHours: Math.max(0.25, keyTtlMin / 60),
+          label: `Index Key · ${keyTtlHours}h · TG ${uid}`,
+          durationHours: keyTtlHours,
           deviceLimit: 1,
           source: 'getkeyv2',
           telegramId: uid
@@ -1690,8 +1708,8 @@ Nếu đã vượt mà chưa thấy key: gõ <code>done</code>.
         if (typeof options.createKey === 'function') {
           const issued2 = options.createKey({
             key: plainKey,
-            label: `Index Key · ${keyTtlMin}p · TG ${uid}`,
-            durationHours: Math.max(0.25, keyTtlMin / 60),
+            label: `Index Key · ${keyTtlHours}h · TG ${uid}`,
+            durationHours: keyTtlHours,
             deviceLimit: 1,
             source: 'getkeyv2-idx',
             telegramId: uid
@@ -1702,7 +1720,7 @@ Nếu đã vượt mà chưa thấy key: gõ <code>done</code>.
     }
 
     // Đăng ký Index Key map (auth cũng nhận IDX-...)
-    const expiresAt = Date.now() + keyTtlMin * 60 * 1000;
+    const expiresAt = Date.now() + keyTtlHours * 60 * 60 * 1000;
     indexKeys[indexKey] = {
       telegramId: uid,
       createdAt: Date.now(),
@@ -1747,7 +1765,7 @@ Nếu đã vượt mà chưa thấy key: gõ <code>done</code>.
 
 <code>${esc(plainKey)}</code>
 
-⏱ Hết hạn: <b>${keyTtlMin} phút</b> · 1 thiết bị
+⏱ Hết hạn: <b>${keyTtlHours} giờ</b> · 1 thiết bị
 
 📋 <b>Cách vào Index:</b>
 1. Bấm <b>📋 Sao chép Key</b> (hoặc giữ dòng key ở trên)
@@ -2840,6 +2858,57 @@ async function lookupInstagram(input) {
     );
   }
 
+
+  async function confirmPaymentDone(chatId, fromId, from) {
+    const sessions = options.getSessions();
+    const sess = sessions[String(fromId)];
+    if (!sess || sess.type !== 'payment') {
+      return send(chatId, '⚠️ Không có đơn thanh toán đang mở.\nGõ <code>/muakeytx</code> để tạo đơn mới.');
+    }
+    const orderId = sess.orderId;
+    let order = null;
+    try {
+      if (typeof orders !== 'undefined') order = orders.find(o => o.id === orderId);
+    } catch (e) {}
+    if (!order || order.status !== 'pending') {
+      delete sessions[String(fromId)]; options.saveSessions(sessions);
+      return send(chatId, '⏰ Đơn đã hết hạn hoặc đã xử lý. Gõ <code>/muakeytx</code> nếu cần tạo lại.');
+    }
+    // Tạo yêu cầu duyệt (không bắt buộc ảnh)
+    const request = {
+      id: idShort(),
+      type: 'payment',
+      status: 'pending',
+      telegramId: String(fromId),
+      username: (from && from.username) || '',
+      userName: displayName(from || {}),
+      orderId,
+      planId: order.planId,
+      planLabel: order.planLabel,
+      price: order.price,
+      durationHours: order.durationHours,
+      caption: 'DONE — User xác nhận đã chuyển khoản. Mã đơn: ' + orderId,
+      proofFileId: null,
+      proofFileIds: [],
+      createdAt: Date.now()
+    };
+    options.addRequest(request);
+    delete sessions[String(fromId)];
+    options.saveSessions(sessions);
+    await send(chatId,
+`✅ <b>ĐÃ GHI NHẬN XÁC NHẬN</b>
+━━━━━━━━━━━━━━━━━━━━
+📦 <b>${esc(order.planLabel || order.planId)}</b>
+💰 ${fmt(order.price)}đ
+🧾 Mã đơn: <code>${esc(orderId)}</code>
+📋 Yêu cầu: <code>#${request.id}</code>
+
+Hệ thống đã chuyển yêu cầu sang hàng chờ duyệt.
+Key sẽ được gửi khi giao dịch được xác nhận.
+💬 @SunNetWin`);
+    await notifyAdmins(request, null);
+  }
+
   async function startPayment(chatId, fromId, planId) {
     const plan = plans().find(p => p.id === String(planId || '').toLowerCase());
     if (!plan) return send(chatId, '❌ Gói không tồn tại. Gõ /muakeytx để chọn lại.');
@@ -2868,29 +2937,31 @@ async function lookupInstagram(input) {
     } catch (e) {}
     const qr = buildVietQr(plan.price, orderId) || (`https://img.vietqr.io/image/${encodeURIComponent(config.bankCode)}-${encodeURIComponent(config.bankAccount)}-compact2.jpg?amount=${encodeURIComponent(String(plan.price))}&addInfo=${encodeURIComponent(orderId)}&accountName=${encodeURIComponent(config.bankAccountName)}`);
     const days = plan.durationHours >= 24 ? `${Math.round(plan.durationHours / 24)} ngày` : `${plan.durationHours}h`;
-    const paymentCaption = '<b>TOOLTUNGTUNG · THÔNG TIN THANH TOÁN</b>\n'
-      + '━━━━━━━━━━━━━━━━━━━━\n'
-      + 'Gói: <b>' + esc(plan.label) + '</b>\n'
-      + 'Thời hạn: <b>' + days + '</b>\n'
-      + 'Số tiền: <b>' + fmt(plan.price) + 'đ</b>\n\n'
-      + '<b>NGÂN HÀNG</b> · ' + esc(config.bankCode) + '\n'
-      + '<b>SỐ TÀI KHOẢN</b>\n<code>' + esc(config.bankAccount) + '</code>\n'
-      + '<b>CHỦ TÀI KHOẢN</b>\n' + esc(config.bankAccountName) + '\n\n'
-      + '<b>NỘI DUNG CHUYỂN KHOẢN</b>\n<code>' + orderId + '</code>\n\n'
-      + 'Vui lòng chuyển đúng số tiền và giữ nguyên nội dung trên.\n'
-      + 'Mã QR có hiệu lực <b>' + Math.round(timeoutSec / 60) + ' phút</b>. Sau khi hệ thống xác nhận, key sẽ được gửi qua bot.\n'
-      + '━━━━━━━━━━━━━━━━━━━━\n'
-      + 'Hỗ trợ: @SunNetWin';
-    let sent = null;
-    try {
-      sent = await sendPhoto(chatId, qr, { caption: paymentCaption });
-    } catch (qrError) {
-      logLine('[shop] sendPhoto QR failed: ' + String(qrError && qrError.message || qrError).slice(0, 220));
-      const fallback = paymentCaption + '\n\n⚠️ Telegram không tải được ảnh QR tự động. Bấm <a href=\"' + esc(qr) + '\">MỞ MÃ QR CHUYỂN KHOẢN</a> hoặc nhập thông tin chuyển khoản phía trên.';
-      try { sent = await send(chatId, fallback, { disable_web_page_preview: false }); }
-      catch (fallbackError) { logLine('[shop] payment fallback failed: ' + String(fallbackError && fallbackError.message || fallbackError).slice(0, 180)); }
-    }
-    const msgId = sent && sent.message_id;
+    const sent = await sendPhoto(chatId, qr, {
+      caption:
+`<b>💳 THANH TOÁN KEY</b>
+━━━━━━━━━━━━━━━━━━━━
+📦 Gói: <b>${esc(plan.label)}</b>
+⏱ Thời hạn: <b>${days}</b>
+💰 Số tiền: <b>${fmt(plan.price)}đ</b>
+
+🏦 <b>${esc(config.bankCode)}</b>
+💳 STK: <code>${esc(config.bankAccount)}</code>
+👤 ${esc(config.bankAccountName)}
+
+📝 Nội dung chuyển khoản (bắt buộc):
+<code>${orderId}</code>
+
+✅ Sau khi chuyển khoản, gõ <b>DONE</b> (hoặc bấm nút bên dưới) để hệ thống xác nhận và gửi yêu cầu duyệt.
+📎 Có thể đính kèm ảnh bill (không bắt buộc).
+⏰ Hết hạn sau <b>${Math.round(timeoutSec/60)} phút</b>.
+💬 @SunNetWin`,
+      reply_markup: { inline_keyboard: [
+        [{ text: '✅ DONE — Xác nhận đã CK', callback_data: 'pay:done' }],
+        [{ text: '❌ Hủy đơn', callback_data: 'cmd:cancel' }]
+      ] }
+    });
+    const msgId = sent && (sent.message_id || (sent.result && sent.result.message_id));
     if (msgId && typeof orders !== 'undefined') {
       const o = orders.find(x => x.id === orderId);
       if (o) { o.tgMessageId = msgId; o.chatId = String(chatId); if (typeof saveOrders === 'function') saveOrders(); }
@@ -2923,8 +2994,12 @@ async function lookupInstagram(input) {
       return startPayment(chatId, fromId, planId);
     }
     if (data === 'buy_menu') return showBuyMenu(chatId);
+    if (data === 'pay:done') return confirmPaymentDone(chatId, fromId, cq.from);
     if (data === 'cmd:getkey') return startGroupKeyTask(chatId, fromId, cq.from);
     if (data === 'cmd:getkeyv2') return startGetkeyV2(chatId, fromId, cq.from);
+    if (data === 'cmd:getkeyv3') {
+      return send(chatId, 'ℹ️ Lệnh /getkeyv3 đã tắt.\nDùng <code>/getkey</code> hoặc <code>/getkeyv2</code> · hoặc <code>/muakeytx</code> mua key.');
+    }
     if (data === 'cmd:feedback') {
       const sessions = options.getSessions(); sessions[fromId] = { type: 'feedback', startedAt: Date.now() }; options.saveSessions(sessions);
       return send(chatId, '📝 <b>GỬI GÓP Ý</b>\nGửi một ảnh kèm nội dung trong phần chú thích ảnh. Admin sẽ xem trước khi đăng lên kênh.');
@@ -3177,7 +3252,7 @@ async function lookupInstagram(input) {
       if (session?.type === 'payment') return createProofRequest(message, 'payment');
       if (session?.type === 'feedback') return createProofRequest(message, 'feedback');
       if (session?.type === 'getkeyv2') return completeGetkeyV2(chatId, fromId);
-      return send(chatId, '⚠️ Gõ /getkeyv1 hoặc /getkeyv2 hoặc /muakeytx trước.');
+      return send(chatId, '⚠️ Gõ /getkey, /getkeyv2 hoặc /muakeytx trước.');
     }
 
     if (!text) return;
@@ -3185,8 +3260,20 @@ async function lookupInstagram(input) {
     // Admin commands are web-only. Telegram is reserved for customer key purchase and delivery.
     if (text.startsWith('/') && isAdmin(fromId)) {
       const adminCmd = text.split(/\s+/)[0].toLowerCase().replace(/^\//, '').split('@')[0];
-      const customerCommands = new Set(['start','help','muakeytx','buy','mykey','getkeyv1','getkey','cancel']);
-      if (!customerCommands.has(adminCmd)) return send(chatId, '🛠 Quản lý đã chuyển sang Index Admin: https://botvippro-production-0b00.up.railway.app/');
+      const customerCommands = new Set([
+        'start','help','menu','guide','support','hotro',
+        'muakeytx','buy','pay','mykey','my_key',
+        'getkey','getkeyv1','getkeyv2','nhapkey','activate',
+        'feedback','infotiktok','videotiktok','infotik','checktt','tiktok','tt',
+        'cancel','done','resetkeytx','resetkey','id','myid','check','checkme','me','checkip','ip',
+        'checkdevice','device','checkfb','infofb','facebook','fb',
+        'checkig','instagram','ig','checkyt','youtube','yt',
+        'checkstatus','trangthai','version','ver','server','time','gio','thongbao'
+      ]);
+      const adminBase = ensureHttps(process.env.PUBLIC_URL || process.env.WEB_URL || '');
+      if (!customerCommands.has(adminCmd)) {
+        return send(chatId, '🛠 Quản lý đã chuyển sang Index Admin' + (adminBase ? ': ' + adminBase.replace(/\/+$/, '') + '/admin' : '.'));
+      }
     }
 
     const parts = text.split(/\s+/);
@@ -3196,15 +3283,26 @@ async function lookupInstagram(input) {
 
     // Bot chỉ là Key Center; mọi cấu hình/quản trị nằm trong Index Admin.
     // Also allow TikTok lookup + getkeyv2 + done
-    const keyCenterCommands = new Set(['start','menu','help','getkeyv1','getkey','getkeyv2','nhapkey','activate','muakeytx','buy','pay','mykey','my_key','cancel','support','hotro','feedback','infotiktok','videotiktok','done']);
+    const keyCenterCommands = new Set([
+      'start','menu','help','guide','support','hotro',
+      'getkey','getkeyv1','getkeyv2',
+      'nhapkey','activate','muakeytx','buy','pay','mykey','my_key',
+      'cancel','feedback','done','resetkeytx','resetkey',
+      'infotiktok','videotiktok','infotik','checktt','tiktok','tt',
+      'check','checkme','me','id','myid','checkip','ip','checkdevice','device',
+      'checkfb','infofb','facebook','fb','checkig','instagram','ig',
+      'checkyt','youtube','yt','checkstatus','trangthai','version','ver','server',
+      'time','gio','thongbao'
+    ]);
     if (!keyCenterCommands.has(cmd) && !['done','xong','hoanthanh'].includes(text.toLowerCase().trim())) {
       return showUserMenu(chatId);
     }
 
-    // Complete getkeyv2 by text "done"
+    // Complete getkeyv2 / payment by text "done"
     if (['done','xong','hoanthanh'].includes(text.toLowerCase().trim()) || cmd === 'done') {
       const sess = sessions[fromId];
       if (sess?.type === 'getkeyv2') return completeGetkeyV2(chatId, fromId);
+      if (sess?.type === 'payment') return confirmPaymentDone(chatId, fromId, from);
     }
 
     // Bảo trì / khóa lệnh
@@ -3224,14 +3322,14 @@ async function lookupInstagram(input) {
         const planId = payload.replace(/^buy[_-]/i, '').toLowerCase();
         return startPayment(chatId, fromId, planId);
       }
-      if (['trial', 'getkeyv1', 'keyfree'].includes(payload.toLowerCase())) return startGroupKeyTask(chatId, fromId, from);
+      if (['trial', 'getkey', 'getkeyv1', 'keyfree'].includes(payload.toLowerCase())) return startGroupKeyTask(chatId, fromId, from);
       if (['feedback', 'gopy'].includes(payload.toLowerCase())) { const ss = options.getSessions(); ss[fromId] = { type: 'feedback', startedAt: Date.now() }; options.saveSessions(ss); return send(chatId, '📝 <b>Gửi góp ý</b>\nGửi 1 ảnh kèm nội dung ở phần chú thích ảnh. Admin sẽ xem trước khi đăng.'); }
       return showStart(chatId, displayName(from), from);
     }
-    if (cmd === 'menu' || cmd === 'help') return showUserMenu(chatId);
+    if (cmd === 'menu' || cmd === 'help' || cmd === 'guide') return showUserMenu(chatId);
     if (cmd === 'feedback') {
       sessions[fromId] = { type: 'feedback', startedAt: Date.now() }; options.saveSessions(sessions);
-      return send(chatId, '📝 <b>GỬI GÓP Ý</b>\nGửi một ảnh kèm nội dung trong phần chú thích ảnh. Nội dung sẽ được gửi admin duyệt trước khi đăng lên kênh.\n\nVí dụ: “Bảng lịch sử trên iPhone bị tràn màn hình”.');
+      return send(chatId, '📝 <b>GỬI GÓP Ý</b>\nGửi <b>1 ảnh</b> kèm nội dung ở phần chú thích (caption).\nAdmin sẽ duyệt trước khi đăng.\n\nVí dụ: “Bảng lịch sử trên iPhone bị tràn màn hình”.');
     }
 
     if (cmd === 'status') {
@@ -3240,8 +3338,18 @@ async function lookupInstagram(input) {
       return send(chatId, `⏳ <b>${pending.length} yêu cầu</b>\n` + pending.map(r => `• #${r.id} ${r.type === 'payment' ? '💳' : r.type === 'reset' ? '🔄' : '🎯'}`).join('\n'));
     }
 
-    if (cmd === 'getkeyv1') {
+    if (cmd === 'getkey' || cmd === 'getkeyv1') {
       return startGroupKeyTask(chatId, fromId, from);
+    }
+
+    // ===== /getkeyv3 — backup URL configured by Admin; this third-party site issues its own key =====
+    if (cmd === 'getkeyv3') {
+      const cfg = options.getConfig() || {};
+      const rawUrl = String(cfg.getkeyv3Url || 'https://tool.skidvn.com/').trim();
+      let safeUrl = '';
+      try { const u = new URL(rawUrl); if (u.protocol === 'https:') safeUrl = u.toString(); } catch (_) {}
+      if (!safeUrl) return send(chatId, '⚠️ Link dự phòng V3 chưa hợp lệ. Nhờ Admin kiểm tra mục Hệ thống → Link nhận key V3.');
+      return send(chatId, `🔑 <b>GETKEY V3 · LINK DỰ PHÒNG</b>\n━━━━━━━━━━━━━━━━━━━━\nMở trang dự phòng bên dưới và làm theo hướng dẫn của dịch vụ.\n⚠️ Đây là dịch vụ ngoài; bot không xác minh hoặc tự gia hạn key do trang đó cấp.\nNếu link lỗi, dùng <code>/getkey</code> hoặc <code>/getkeyv2</code>.\n\n@SunNetWin`, { reply_markup: { inline_keyboard: [[{ text: '🌐 Mở trang nhận key V3', url: safeUrl }]] } });
     }
 
     // ===== /getkeyv2 — Link4M + Index Key (max 2/day) =====
@@ -3403,8 +3511,49 @@ Hoặc mở Index → dán key → UNLOCK.
       return showStart(chatId, displayName(from), from);
     }
 
-    if (cmd === 'resetkeytx') {
-      return send(chatId, 'ℹ️ Chức năng reset key đã được gỡ. Hỗ trợ: @SunNetWin');
+    if (cmd === 'resetkeytx' || cmd === 'resetkey') {
+      const plain = (argText || args.join(' ') || '').trim();
+      if (!plain) {
+        return send(chatId,
+`❌ <b>Vui lòng nhập key cần reset.</b>
+Ví dụ: <code>/resetkeytx FDZwg3sn4TN6</code>
+
+💡 Lệnh này dùng để xoá toàn bộ thiết bị đã đăng nhập của key, giúp bạn đăng nhập được trên thiết bị mới.`);
+      }
+      let record = null;
+      try {
+        if (typeof options.findKey === 'function') record = options.findKey(plain);
+      } catch (e) {}
+      if (!record) {
+        try {
+          const all = (typeof options.getKeys === 'function' ? options.getKeys() : null) || (typeof keys !== 'undefined' ? keys : []);
+          const h = require('crypto').createHash('sha256').update(String(plain)).digest('hex');
+          record = all.find(k => String(k.id) === plain || String(k.hash) === h || String(k.plainKey || '') === plain);
+        } catch (e) {}
+      }
+      if (!record) return send(chatId, '❌ Không tìm thấy key. Kiểm tra lại mã key.');
+      if (record.revoked || record.status === 'revoked') return send(chatId, '❌ Key đã bị thu hồi.');
+      if (record.expiresAt && record.expiresAt < Date.now()) return send(chatId, '❌ Key đã hết hạn.');
+      // Chỉ chủ key (telegramId) hoặc key chưa gắn TG mới được reset
+      if (record.telegramId && String(record.telegramId) !== String(fromId)) {
+        return send(chatId, '⛔ Key này đang liên kết với Telegram khác. Liên hệ @SunNetWin nếu bạn là chủ sở hữu.');
+      }
+      const before = (record.deviceHashes || []).length;
+      const lim = record.deviceLimit || 1;
+      record.deviceHashes = [];
+      try {
+        if (typeof options.patchKey === 'function') options.patchKey(record.id, { deviceHashes: [] });
+        else if (typeof saveKeys === 'function') saveKeys();
+      } catch (e) {}
+      return send(chatId,
+`✅ <b>ĐÃ RESET THIẾT BỊ</b>
+━━━━━━━━━━━━━━━━━━━━
+🔑 Key: <code>${esc(plain.length > 20 ? plain.slice(0, 8) + '…' : plain)}</code>
+📱 Thiết bị trước: <b>${before}</b> / ${lim}
+📱 Thiết bị hiện tại: <b>0</b> / ${lim}
+
+Bạn có thể đăng nhập lại trên thiết bị mới trong Mini App.
+💬 @SunNetWin`);
     }
 
     if (cmd === 'id' || cmd === 'myid') {
@@ -3413,18 +3562,25 @@ Hoặc mở Index → dán key → UNLOCK.
     if (cmd === 'time' || cmd === 'gio') {
       return send(chatId, '🕐 <b>' + new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) + '</b>\nGMT+7');
     }
-    if (cmd === 'check' || cmd === 'menu') {
+    if (cmd === 'check') {
       return send(chatId,
-        '🔍 <b>MENU LỆNH USER</b>\n━━━━━━━━━━━━━━━\n' +
-        '👤 /checkme · /id · /mykey\n' +
-        '🌐 /checkip · /checkdevice\n' +
-        '📱 /checktt @user · /infotik @user\n' +
-        '📘 /checkfb link|user · /infofb\n' +
-        '📸 /checkig @user\n' +
-        '▶️ /checkyt @channel|link\n' +
-        '📢 /thongbao · /guide · /support\n' +
-        '📦 /version · /server · /checkstatus\n' +
-        '🎁 /getkeyv1 · 💳 /muakeytx · 🔄 /resetkeytx'
+`🔍 <b>Lệnh check thông tin:</b>
+<blockquote><b>/checkme</b> — Thông tin Telegram của bạn
+Ví dụ: <code>/checkme</code></blockquote>
+<blockquote><b>/id</b> · <b>/checkip</b> · <b>/checkdevice</b>
+Ví dụ: <code>/checkip</code></blockquote>
+<blockquote><b>/checktt {username}</b> — TikTok
+Ví dụ: <code>/checktt ngth.2010</code>
+⏳ Cooldown: 30 giây</blockquote>
+<blockquote><b>/checkfb {user|link}</b> — Facebook
+Ví dụ: <code>/checkfb facebook.com/zuck</code></blockquote>
+<blockquote><b>/checkig {@user}</b> — Instagram
+Ví dụ: <code>/checkig @instagram</code></blockquote>
+<blockquote><b>/checkyt {@channel|link}</b> — YouTube
+Ví dụ: <code>/checkyt @MrBeast</code></blockquote>
+<blockquote><b>/checkstatus</b> · <b>/version</b> · <b>/server</b>
+Trạng thái bot & hệ thống</blockquote>
+🎁 /getkey · 🔗 /getkeyv2 · 💳 /muakeytx · 🔑 /mykey`
       );
     }
     if (cmd === 'checkip' || cmd === 'ip') {
@@ -3455,7 +3611,7 @@ Hoặc mở Index → dán key → UNLOCK.
       return send(chatId, '🔑 <b>KEY CỦA BẠN</b>\n'+lines.join('\n\n'));
     }
     if (cmd === 'guide' || cmd === 'huongdan' || cmd === 'trogiup') {
-      return send(chatId, '📖 <b>HƯỚNG DẪN</b>\n1️⃣ /start → mở Mini App\n2️⃣ Nhập key → đăng nhập\n3️⃣ Chọn game xem dự đoán\n\n🎁 /getkeyv1 · 💎 /muakeytx\n🔄 /resetkeytx · 🔑 /mykey\n🔍 /check · 📱 /checktt @user');
+      return send(chatId, '📖 <b>HƯỚNG DẪN</b>\n1️⃣ /start → mở Mini App\n2️⃣ Nhập key → đăng nhập\n3️⃣ Chọn game xem dự đoán\n\n🎁 /getkey · 💎 /muakeytx\n🔄 /resetkeytx · 🔑 /mykey');
     }
     if (cmd === 'support' || cmd === 'hotro') {
       const cfg = (options.getConfig&&options.getConfig())||{};
@@ -3633,6 +3789,24 @@ ${info.private ? '🔒 Private' : '🌐 Public'}
     notifyAdmins,
     stop: () => { stopped = true; }
   };
+  // Telegram command keyboard: keep the main customer commands aligned with /help.
+  tg('setMyCommands', { commands: [
+    { command: 'start', description: 'Mở menu / Mini App' },
+    { command: 'help', description: 'Hướng dẫn lệnh' },
+    { command: 'getkey', description: 'Key dùng thử qua nhiệm vụ' },
+    { command: 'getkeyv2', description: 'Nhận key qua Link4M' },
+    { command: 'muakeytx', description: 'Bảng giá và mua key' },
+    { command: 'nhapkey', description: 'Kích hoạt key' },
+    { command: 'mykey', description: 'Kiểm tra key' },
+    { command: 'infotiktok', description: 'Thông tin kênh TikTok' },
+    { command: 'videotiktok', description: 'Thông tin video TikTok' },
+    { command: 'resetkeytx', description: 'Reset thiết bị của key' },
+    { command: 'checkfb', description: 'Check Facebook' },
+    { command: 'checkig', description: 'Check Instagram' },
+    { command: 'checkyt', description: 'Check YouTube' },
+    { command: 'feedback', description: 'Gửi góp ý' },
+    { command: 'cancel', description: 'Hủy thao tác' }
+  ] }).catch(e => console.warn('[telegram] setMyCommands:', e.message));
   loop();
   console.log(`[telegram] cmd-only bot started; admins=${adminIds.size}`);
   return bot;
@@ -3857,30 +4031,37 @@ function requireAdmin(req, res, next) {
 // ---------- configurable game feeds ----------
 const DEFAULT_GAMES = [
   // Sunwin
-  { id: 'sunwin', label: 'Sunwin · TX', brand: 'sunwin', brandLabel: 'Sunwin', variant: 'TX', url: 'https://apisunwin-cocalhahaha.onrender.com/api/sunwin', parser: 'sunwin', group: 'tx', icon: 'sunwin', enabled: true, playUrl: 'https://web.sunwin.guitars/?affId=Sunwin' },
-  { id: 'sicbo_sunwin', label: 'Sunwin · Sicbo', brand: 'sunwin', brandLabel: 'Sunwin', variant: 'Sicbo', url: 'https://apitaixiu-6jjn.onrender.com/api/sicbo/sunwin', parser: 'max789', group: 'sicbo', icon: 'sicbo', historyUrl: 'https://apitaixiu-6jjn.onrender.com/api/sicsun/history', enabled: true, playUrl: 'https://web.sunwin.guitars/?affId=Sunwin' },
-  // LC79
-  { id: 'lc79_hu', label: 'LC79 · TX', brand: 'lc79', brandLabel: 'LC79', variant: 'TX', url: 'https://wtx.tele68.com/v1/tx/sessions', parser: 'lc79', group: 'tx', icon: 'lc79', enabled: true, playUrl: 'https://play.lc79.bet' },
-  { id: 'lc79_md5', label: 'LC79 · MD5', brand: 'lc79', brandLabel: 'LC79', variant: 'MD5', url: 'https://wtxmd52.tele68.com/v1/txmd5/sessions', parser: 'lc79', group: 'tx', icon: 'lc79', enabled: true, playUrl: 'https://play.lc79.bet' },
+  { id: 'sunwin', label: 'Sunwin · TX', brand: 'sunwin', brandLabel: 'Sunwin', variant: 'TX', url: 'https://apisunwin-cocalhahaha.onrender.com/api/sunwin', parser: 'sunwin', group: 'tx', icon: 'sunwin', enabled: true, playUrl: 'https://sun.win' },
+  { id: 'sicbo_sunwin', label: 'Sunwin · Sicbo', brand: 'sunwin', brandLabel: 'Sunwin', variant: 'Sicbo', url: 'https://apitaixiu-6jjn.onrender.com/api/sicbo/sunwin', parser: 'max789', group: 'sicbo', icon: 'sicbo', historyUrl: 'https://apitaixiu-6jjn.onrender.com/api/sicsun/history', enabled: true, playUrl: 'https://sun.win' },
+  // LC79 (apitaixiu)
+  { id: 'lc79_hu', label: 'LC79 · Hũ TX', brand: 'lc79', brandLabel: 'LC79', variant: 'TX', url: 'https://apitaixiu-6jjn.onrender.com/lc79/tx', parser: 'sunwin', group: 'tx', icon: 'lc79', enabled: true, playUrl: '' },
+  { id: 'lc79_md5', label: 'LC79 · MD5', brand: 'lc79', brandLabel: 'LC79', variant: 'MD5', url: 'https://apitaixiu-6jjn.onrender.com/lc79/md5', parser: 'sunwin', group: 'md5', icon: 'lc79', enabled: true, playUrl: '' },
   // Max789
-  { id: 'max789_hu', label: 'Max789 · TX', brand: 'max789', brandLabel: 'Max789', variant: 'TX', url: 'https://apitaixiu-6jjn.onrender.com/max789/tx', parser: 'max789', group: 'tx', icon: 'max789', enabled: true, playUrl: 'https://play.max789h.vin/' },
-  { id: 'max789_md5', label: 'Max789 · MD5', brand: 'max789', brandLabel: 'Max789', variant: 'MD5', url: 'https://max789-nqfd.onrender.com/api/taixiumd5/max789', parser: 'max789', group: 'tx', icon: 'max789', enabled: true, playUrl: 'https://play.max789h.vin/' },
+  { id: 'max789_hu', label: 'Max789 · TX', brand: 'max789', brandLabel: 'Max789', variant: 'TX', url: 'https://apitaixiu-6jjn.onrender.com/max789/tx', parser: 'max789', group: 'tx', icon: 'max789', enabled: true, playUrl: '' },
+  { id: 'max789_md5', label: 'Max789 · MD5', brand: 'max789', brandLabel: 'Max789', variant: 'MD5', url: 'https://max789-nqfd.onrender.com/api/taixiumd5/max789', parser: 'max789', group: 'tx', icon: 'max789', enabled: true, playUrl: '' },
   // Hitclub
-  { id: 'hitclub_hu', label: 'Hitclub · TX', brand: 'hitclub', brandLabel: 'Hitclub', variant: 'TX', url: 'https://apihitclubhihi.onrender.com/api/hitclub/hu', parser: 'sunwin', group: 'tx', icon: 'hitclub', enabled: true, playUrl: 'https://v.hitclub.theatre/?a=hitclub' },
-  { id: 'hitclub_md5', label: 'Hitclub · MD5', brand: 'hitclub', brandLabel: 'Hitclub', variant: 'MD5', url: 'https://apihitclubhihi.onrender.com/api/hitclub/md5', parser: 'sunwin', group: 'tx', icon: 'hitclub', enabled: true, playUrl: 'https://v.hitclub.theatre/?a=hitclub' },
-  { id: 'sicbo_hitclub', label: 'Hitclub · Sicbo', brand: 'hitclub', brandLabel: 'Hitclub', variant: 'Sicbo', url: 'https://apitaixiu-6jjn.onrender.com/api/sicbo/hitclub', parser: 'max789', group: 'sicbo', icon: 'sicbo', enabled: true, playUrl: 'https://v.hitclub.theatre/?a=hitclub' },
+  { id: 'hitclub_hu', label: 'Hitclub · TX', brand: 'hitclub', brandLabel: 'Hitclub', variant: 'TX', url: 'https://apihitclubhihi.onrender.com/api/hitclub/hu', parser: 'sunwin', group: 'tx', icon: 'hitclub', enabled: true, playUrl: '' },
+  { id: 'hitclub_md5', label: 'Hitclub · MD5', brand: 'hitclub', brandLabel: 'Hitclub', variant: 'MD5', url: 'https://apihitclubhihi.onrender.com/api/hitclub/md5', parser: 'sunwin', group: 'tx', icon: 'hitclub', enabled: true, playUrl: '' },
+  { id: 'sicbo_hitclub', label: 'Hitclub · Sicbo', brand: 'hitclub', brandLabel: 'Hitclub', variant: 'Sicbo', url: 'https://apitaixiu-6jjn.onrender.com/api/sicbo/hitclub', parser: 'max789', group: 'sicbo', icon: 'sicbo', enabled: true, playUrl: '' },
   // BetVIP
-  { id: 'betvip_hu', label: 'BetVIP · TX', brand: 'betvip', brandLabel: 'BetVIP', variant: 'TX', url: 'https://apitaixiu-6jjn.onrender.com/betvip/tx', parser: 'max789', group: 'tx', icon: 'betvip', enabled: true, playUrl: 'https://play.betvip.trade/' },
-  { id: 'betvip_md5', label: 'BetVIP · MD5', brand: 'betvip', brandLabel: 'BetVIP', variant: 'MD5', url: 'https://apitaixiu-6jjn.onrender.com/betvip/md5', parser: 'max789', group: 'tx', icon: 'betvip', enabled: true, playUrl: 'https://play.betvip.trade/' },
+  { id: 'betvip_hu', label: 'BetVIP · TX', brand: 'betvip', brandLabel: 'BetVIP', variant: 'TX', url: 'https://apitaixiu-6jjn.onrender.com/betvip/tx', parser: 'max789', group: 'tx', icon: 'betvip', enabled: true, playUrl: '' },
+  { id: 'betvip_md5', label: 'BetVIP · MD5', brand: 'betvip', brandLabel: 'BetVIP', variant: 'MD5', url: 'https://apitaixiu-6jjn.onrender.com/betvip/md5', parser: 'max789', group: 'tx', icon: 'betvip', enabled: true, playUrl: '' },
   // B52
-  { id: 'b52_tx', label: 'B52 · TX', brand: 'b52', brandLabel: 'B52', variant: 'TX', url: 'https://apitaixiu-6jjn.onrender.com/b52/history', parser: 'b52hist', group: 'tx', icon: 'b52', enabled: true, playUrl: 'https://play.b52club.med/?app_id=B52' },
-  { id: 'sicbo_b52', label: 'B52 · Sicbo', brand: 'b52', brandLabel: 'B52', variant: 'Sicbo', url: 'https://apitaixiu-6jjn.onrender.com/api/sicbo/b52', parser: 'max789', group: 'sicbo', icon: 'sicbo', historyUrl: 'https://apitaixiu-6jjn.onrender.com/api/sicbo/history', enabled: true, playUrl: 'https://play.b52club.med/?app_id=B52' },
+  { id: 'b52_tx', label: 'B52 · TX', brand: 'b52', brandLabel: 'B52', variant: 'TX', url: 'https://apitaixiu-6jjn.onrender.com/b52/history', parser: 'b52hist', group: 'tx', icon: 'b52', enabled: true, playUrl: '' },
+  { id: 'sicbo_b52', label: 'B52 · Sicbo', brand: 'b52', brandLabel: 'B52', variant: 'Sicbo', url: 'https://sicbob52-9zn5.onrender.com/api/sicbo/b52', parser: 'max789', group: 'sicbo', icon: 'sicbo', enabled: true, playUrl: '' },
+  // 68GB
+  { id: 'gb68_md5', label: '68GB · MD5', brand: '68gb', brandLabel: '68GB', variant: 'MD5', url: 'https://apitaixiu-6jjn.onrender.com/68gb/md5', parser: 'sunwin', group: 'md5', icon: 'max789', enabled: true, playUrl: 'https://68gbvip66.pro/?code=20224253' },
+  // 789Club
+  { id: 'club789_tx', label: '789Club · TX', brand: '789club', brandLabel: '789Club', variant: 'TX', url: 'https://apitaixiu-6jjn.onrender.com/789club/tx', parser: 'sunwin', group: 'tx', icon: 'max789', enabled: true, playUrl: 'https://play.789club.lease/?affId=28c5c38983fcb2757631cae1fbb21a73&utm_source=na&utm_campaign=seo&referrer_domain=789club86.com' },
+  { id: 'sicbo_789', label: '789Club · Sicbo', brand: '789club', brandLabel: '789Club', variant: 'Sicbo', url: 'https://apitaixiu-6jjn.onrender.com/api/sicbo/789', parser: 'max789', group: 'sicbo', icon: 'sicbo', enabled: true, playUrl: 'https://play.789club.lease/?affId=28c5c38983fcb2757631cae1fbb21a73&utm_source=na&utm_campaign=seo&referrer_domain=789club86.com' },
   
 ];
 
 
 let gameConfigs = loadJSON(GAMES_FILE, null);
 if (!Array.isArray(gameConfigs)) gameConfigs = DEFAULT_GAMES.map(g => ({ ...g }));
+
+
 if (!gameConfigs.some(g => g.id === 'max789_md5' || (g.parser === 'max789' && g.id === 'max789_md5'))) {
   const mx = DEFAULT_GAMES.find(g => g.id === 'max789_md5');
   if (mx) gameConfigs.push({ ...mx });
@@ -3888,22 +4069,6 @@ if (!gameConfigs.some(g => g.id === 'max789_md5' || (g.parser === 'max789' && g.
 for (const def of DEFAULT_GAMES) {
   if (!gameConfigs.some(g => g.id === def.id)) gameConfigs.push({ ...def });
 }
-// Migration: fill default game links on existing data files without overwriting links saved by Admin.
-let defaultLinksChanged = false;
-for (const def of DEFAULT_GAMES) {
-  const current = gameConfigs.find(g => g && g.id === def.id);
-  if (!current || !def.playUrl) continue;
-  if (!String(current.playUrl || current.play_url || current.gameLink || '').trim()) {
-    current.playUrl = def.playUrl;
-    defaultLinksChanged = true;
-  }
-  // A configured play link should not remain disabled by a stale comingSoon flag.
-  if (String(current.playUrl || current.play_url || current.gameLink || '').trim() && current.comingSoon) {
-    current.comingSoon = false;
-    defaultLinksChanged = true;
-  }
-}
-if (defaultLinksChanged) { try { saveJSON(GAMES_FILE, gameConfigs); } catch (e) {} }
 
 // Seed iconUrl mặc định theo brand nếu thiếu
 (function seedGameIcons() {
@@ -3941,6 +4106,33 @@ function createFeed(config) {
     correct: 0, total: 0, lastLive: null, lastEnsemble: null, _seen: [], lastError: null };
 }
 function saveGameConfigs() { saveJSON(GAMES_FILE, gameConfigs); }
+
+// Force-sync known game endpoints (LC79 / B52 Sicbo / 68GB)
+(function syncGameEndpoints() {
+  const want = {
+    lc79_hu: { url: 'https://apitaixiu-6jjn.onrender.com/lc79/tx', parser: 'sunwin', group: 'tx', label: 'LC79 · Hũ TX', variant: 'TX' },
+    lc79_md5: { url: 'https://apitaixiu-6jjn.onrender.com/lc79/md5', parser: 'sunwin', group: 'md5', label: 'LC79 · MD5', variant: 'MD5' },
+    sicbo_b52: { url: 'https://sicbob52-9zn5.onrender.com/api/sicbo/b52', parser: 'max789', group: 'sicbo', label: 'B52 · Sicbo', variant: 'Sicbo' },
+    gb68_md5: { url: 'https://apitaixiu-6jjn.onrender.com/68gb/md5', parser: 'sunwin', group: 'md5', label: '68GB · MD5', variant: 'MD5', brand: '68gb', brandLabel: '68GB', icon: 'max789', enabled: true, playUrl: 'https://68gbvip66.pro/?code=20224253' },
+    club789_tx: { url: 'https://apitaixiu-6jjn.onrender.com/789club/tx', parser: 'sunwin', group: 'tx', label: '789Club · TX', variant: 'TX', brand: '789club', brandLabel: '789Club', icon: 'max789', enabled: true, playUrl: 'https://play.789club.lease/?affId=28c5c38983fcb2757631cae1fbb21a73&utm_source=na&utm_campaign=seo&referrer_domain=789club86.com' },
+    sicbo_789: { url: 'https://apitaixiu-6jjn.onrender.com/api/sicbo/789', parser: 'max789', group: 'sicbo', label: '789Club · Sicbo', variant: 'Sicbo', brand: '789club', brandLabel: '789Club', icon: 'sicbo', enabled: true, playUrl: 'https://play.789club.lease/?affId=28c5c38983fcb2757631cae1fbb21a73&utm_source=na&utm_campaign=seo&referrer_domain=789club86.com' }
+  };
+  let changed = false;
+  for (const [id, patch] of Object.entries(want)) {
+    let g = gameConfigs.find(x => x.id === id);
+    if (!g) {
+      gameConfigs.push(Object.assign({ id: id, brand: patch.brand || id.split('_')[0], brandLabel: patch.brandLabel || patch.label, playUrl: '', icon: patch.icon || '', enabled: true }, patch));
+      changed = true;
+      continue;
+    }
+    for (const [k, v] of Object.entries(patch)) {
+      if (g[k] !== v) { g[k] = v; changed = true; }
+    }
+  }
+  if (changed) {
+    try { saveGameConfigs(); } catch (e) {}
+  }
+})();
 function initializeFeedConfigs() {
   for (const key of Object.keys(FEEDS)) delete FEEDS[key];
   for (const g of gameConfigs) {
@@ -4079,7 +4271,7 @@ function parseMax789(data) {
   const sum = Number(item.tong ?? item.Tong ?? item.sum ?? dice.reduce((a, b) => a + b, 0));
   const raw = String(item.ket_qua || item.Ket_qua || item.ketqua || item.result || '').toLowerCase();
   let lastChar = sum >= 11 ? 'T' : 'X';
-  if (raw.includes('tai') || raw === 't') lastChar = 'T';
+  if (raw.includes('tai') || raw.includes('tài') || raw === 't') lastChar = 'T';
   else if (raw.includes('xiu') || raw.includes('xỉu') || raw === 'x') lastChar = 'X';
 
   // Build history from pattern (oldest → newest in string left→right typically)
@@ -4395,7 +4587,25 @@ async function pollFeed(id) {
           const isCorrect = f.pendingPred.predicted === item.char;
           f.total++;
           if (isCorrect) f.correct++;
-          scoreRow = { session: item.session, predicted: f.pendingPred.predicted, actual: item.char, isCorrect, ts: Date.now(), sourceSession: f.pendingPred.sourceSession };
+          const viTop3 = Array.isArray(f.pendingPred.viTop3) ? f.pendingPred.viTop3.map(Number) : [];
+          const actualSum = Number(item.sum);
+          const viHit = Number.isFinite(actualSum) && viTop3.includes(actualSum);
+          const viHitNum = viHit ? actualSum : null;
+          scoreRow = {
+            session: item.session,
+            predicted: f.pendingPred.predicted,
+            actual: item.char,
+            isCorrect,
+            sum: actualSum,
+            dice: item.dice || null,
+            viTop3,
+            viHit,
+            viHitNum,
+            hit: isCorrect,
+            pred: f.pendingPred.predicted,
+            ts: Date.now(),
+            sourceSession: f.pendingPred.sourceSession
+          };
           f.accuracyHistory.unshift(scoreRow);
           f.accuracyHistory = f.accuracyHistory.slice(0, 10000);
           f.pendingPred = null;
@@ -4446,7 +4656,14 @@ async function pollFeed(id) {
     else if (pr === 'PLAYER' || pr === 'P' || pr === 'CON') predicted = 'P';
     else if (f.parser === 'tx') predicted = 'B';
     const target = f.openSession != null ? String(f.openSession) : nextSessionNumber(latest.session);
-    f.pendingPred = { sourceSession: String(latest.session), targetSession: target, predicted, createdAt: Date.now() };
+    const lastSicbo = (f.lastEnsemble && f.lastEnsemble.sicbo) || {};
+    f.pendingPred = {
+      sourceSession: String(latest.session),
+      targetSession: target,
+      predicted,
+      viTop3: Array.isArray(lastSicbo.viTop3) ? lastSicbo.viTop3.map(Number) : [],
+      createdAt: Date.now()
+    };
     f.lastError = null;
   } catch (e) {
     f.lastError = e.message || String(e);
@@ -4483,6 +4700,8 @@ let botSettings = loadJSON(SETTINGS_FILE, null) || {
   bankCode: '', bankAccount: '', bankAccountName: '', plans: [],
   getkeyv2MaxPerDay: 2,
   getkeyv2LinkMinutes: 5,
+  getkeyv2KeyHours: 18,
+  getkeyv3Url: 'https://tool.skidvn.com/',
   indexKeyMinutes: 30,
   link4mBaseUrl: 'https://link4m.co/api-shorten/v2',
   link4mApiToken: '',
@@ -4559,6 +4778,8 @@ function normalizeSettings(value) {
     // ===== GETKEYV2 / Index Key configurable =====
     getkeyv2MaxPerDay: Math.min(20, Math.max(1, Number(v.getkeyv2MaxPerDay ?? 2))),
     getkeyv2LinkMinutes: Math.min(30, Math.max(1, Number(v.getkeyv2LinkMinutes ?? 5))),
+    getkeyv2KeyHours: Math.min(168, Math.max(0.25, Number(v.getkeyv2KeyHours ?? 18))),
+    getkeyv3Url: String(v.getkeyv3Url || 'https://tool.skidvn.com/').trim().slice(0, 300),
     indexKeyMinutes: Math.min(180, Math.max(5, Number(v.indexKeyMinutes ?? 30))),
     link4mBaseUrl: String(v.link4mBaseUrl || 'https://link4m.co/api-shorten/v2').trim().slice(0, 200),
     link4mApiToken: String(v.link4mApiToken || '').trim().slice(0, 120),
@@ -4681,12 +4902,12 @@ app.get('/api/link4m/pass', async (req, res) => {
   const uidQ = String(req.query.u || req.query.uid || '').trim();
 
   const page = (opts) => {
-    const { title, ok, key, minutes, err } = opts;
+    const { title, ok, key, minutes, hours, err } = opts;
     const keyBlock = key ? `
       <div class="keybox" id="keybox">${String(key).replace(/</g,'&lt;')}</div>
       <button type="button" class="btn" id="btnCopy">📋 Sao chép Key</button>
       <p class="tiny" id="copied" hidden>Đã sao chép!</p>
-      <p class="hint">Hết hạn khoảng <b>${minutes || 30} phút</b> · Dùng 1 thiết bị</p>
+      <p class="hint">Hết hạn khoảng <b>${hours != null ? hours + ' giờ' : (minutes || 30) + ' phút'}</b> · Dùng 1 thiết bị</p>
       <a class="link" href="/">Mở trang Index để UNLOCK →</a>
       <script>
         (function(){
@@ -4778,7 +4999,7 @@ h1{font-size:20px;margin:0 0 8px;font-weight:700}
   } catch (_) {}
 
   const cfg = (typeof botSettings !== 'undefined' && botSettings) ? botSettings : {};
-  const keyTtlMin = Number(cfg.indexKeyMinutes) || 30;
+  const keyTtlHours = Number(cfg.getkeyv2KeyHours) || 18;
   const maxPerDay = Number(cfg.getkeyv2MaxPerDay) || 2;
 
   // Phát key một lần — lưu trên pending để F5 vẫn xem lại được trong phiên
@@ -4798,8 +5019,8 @@ h1{font-size:20px;margin:0 0 8px;font-weight:700}
     }
     try {
       const issued = createKey({
-        label: 'Index Key · ' + keyTtlMin + 'p · TG ' + uid,
-        durationHours: Math.max(0.25, keyTtlMin / 60),
+        label: 'Index Key · ' + keyTtlHours + 'h · TG ' + uid,
+        durationHours: keyTtlHours,
         deviceLimit: 1,
         source: 'getkeyv2-page',
         telegramId: uid || null
@@ -4840,7 +5061,7 @@ h1{font-size:20px;margin:0 0 8px;font-weight:700}
     title: 'Key của bạn',
     ok: true,
     key: pending.plainKey,
-    minutes: keyTtlMin
+    hours: keyTtlHours
   }));
 });
 
@@ -5272,6 +5493,17 @@ app.get('/api/predict', requireUser, async (req, res) => {
     id: lastSess,
     live: f.lastLive || null,
     accuracy: f.total ? { correct: f.correct, total: f.total, pct: +(f.correct / f.total * 100).toFixed(1) } : null,
+    history: (f.history || []).slice(0, 50),
+    accuracyHistory: (f.accuracyHistory || []).slice(0, 40),
+    lastResult: (f.history && f.history[0]) ? {
+      session: f.history[0].session,
+      char: f.history[0].char,
+      sum: f.history[0].sum,
+      dice: f.history[0].dice || null,
+      prediction: f.history[0].prediction || null,
+      isCorrect: f.history[0].isCorrect
+    } : null,
+    lastScore: (f.accuracyHistory && f.accuracyHistory[0]) ? f.accuracyHistory[0] : null,
     feedError: f.lastError || null,
     calibration: calibration,
     algos: ensemble.algos || null,
