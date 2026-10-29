@@ -114,6 +114,24 @@ hr.sep{border:none;border-top:1px solid var(--line);margin:18px 0}
 
 .proof-viewer{position:fixed;inset:0;z-index:99999;background:rgba(15,23,42,.72);display:flex;align-items:center;justify-content:center;padding:16px}.proof-viewer[hidden]{display:none!important}.proof-box{width:min(760px,100%);max-height:92vh;overflow:auto;background:#fff;border:1px solid #dbe3ed;border-radius:16px;padding:14px;box-shadow:0 18px 60px #0004}.proof-box button{margin-bottom:10px}.proof-box img{display:block;max-width:100%;max-height:72vh;object-fit:contain;margin:auto;border-radius:10px}.proof-box p{color:#475569;font-size:13px}.btn.sm{min-height:36px}
 @media(max-width:700px){.topbar,.topbar-inner,.header,.head{height:auto!important;min-height:unset;flex-wrap:wrap;gap:10px;padding:12px!important}.tabs,.nav-tabs{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px!important;width:100%}.tabs button,.nav-tabs button{min-width:0;padding:10px 8px!important;font-size:12px}.container,.wrap,.main{padding-left:10px!important;padding-right:10px!important}.grid2,.grid3,.cards-grid{grid-template-columns:minmax(0,1fr)!important}.stats,.stat-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:8px!important}.card{padding:13px!important;border-radius:14px!important}.row-actions{display:flex;flex-wrap:wrap;gap:8px}.row-actions .btn,.btn{min-height:40px}.table-wrap{max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}table{min-width:600px}.f input,.f select,.f textarea,input,select,textarea{max-width:100%;font-size:16px!important}.proof-viewer{padding:8px}}
+
+/* Ultra Max — compact, readable Admin refinement */
+:root{color-scheme:light}
+body{background:radial-gradient(circle at 5% 0%,#eaf2ff 0,transparent 30%),#f4f7fb!important;color:#17233b!important;font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif!important}
+.card,.panel .card,.game-item{border:1px solid #e2e8f0!important;border-radius:16px!important;background:rgba(255,255,255,.96)!important;box-shadow:0 5px 20px rgba(19,39,73,.045)!important;transition:box-shadow .2s ease,border-color .2s ease,transform .2s ease}
+.card:hover,.game-item:hover{border-color:#c8d9f5!important;box-shadow:0 10px 26px rgba(37,99,235,.08)!important}
+button,.btn{border-radius:10px!important;font-weight:700!important;transition:transform .16s ease,box-shadow .16s ease,background .16s ease!important;touch-action:manipulation}
+button:active,.btn:active{transform:scale(.985)}
+input,select,textarea{border-radius:10px!important;border-color:#d5deeb!important;background:#fff!important;color:#17233b!important}
+input:focus,select:focus,textarea:focus{outline:3px solid rgba(37,99,235,.12)!important;border-color:#6291ee!important}
+.tabs button.active,.nav-tabs button.active{box-shadow:0 5px 15px rgba(37,99,235,.17)!important}
+.pill{border-radius:999px!important;font-weight:800!important;letter-spacing:.015em}
+.game-item .top{gap:12px;align-items:flex-start}
+.game-item .top>div:first-child{min-width:0;overflow-wrap:anywhere}
+.game-item code{font-size:11px;background:#f1f5f9;border-radius:6px;padding:3px 5px;color:#475569}
+.hint{line-height:1.55!important;color:#64748b!important}
+@media(max-width:700px){body{font-size:14px!important}.topbar,.topbar-inner,.header,.head{position:static!important}.tabs,.nav-tabs{grid-template-columns:repeat(2,minmax(0,1fr))!important}.tabs button,.nav-tabs button{white-space:normal;min-height:42px;line-height:1.25}.game-item .top{flex-direction:column}.game-item .top>div:last-child{width:100%;display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px!important}.game-item .top .btn{padding:9px 6px!important;min-width:0;font-size:12px!important}.game-item .grid2{grid-template-columns:minmax(0,1fr)!important}.game-item{padding:12px!important}.table-wrap{border-radius:12px}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition:none!important}}
 </style>
 </head>
 <body>
@@ -269,6 +287,8 @@ hr.sep{border:none;border-top:1px solid var(--line);margin:18px 0}
         <p class="hint">Giới hạn vượt link, thời gian sống key, chống spam lệnh bot.</p>
         <div class="grid3">
           <label class="f">Số lần /getkeyv2 mỗi ngày<input id="getkeyv2MaxPerDay" type="number" min="1" max="20"/></label>
+          <label class="f">Thời hạn key V2 (giờ)<input id="getkeyv2KeyHours" type="number" min="0.25" max="168" step="0.25"/><small>Ví dụ 18 = 18 giờ</small></label>
+          <label class="f">Link nhận key V3 dự phòng<input id="getkeyv3Url" type="url" placeholder="https://tool.skidvn.com/"/><small>Link HTTPS do Admin cấu hình; đây là dịch vụ bên ngoài.</small></label>
           <label class="f">Huỷ link 4M sau (phút)<input id="getkeyv2LinkMinutes" type="number" min="1" max="30"/></label>
           <label class="f">Index Key sống (phút)<input id="indexKeyMinutes" type="number" min="5" max="180"/></label>
           <label class="f">Base URL Link4M<input id="link4mBaseUrl" type="url" placeholder="https://link4m.co/api-shorten/v2"/></label>
@@ -730,6 +750,8 @@ hr.sep{border:none;border-top:1px solid var(--line);margin:18px 0}
         el.querySelector('[data-act="save"]').onclick = async () => {
           const body = {};
           el.querySelectorAll('[data-f]').forEach((inp) => { body[inp.getAttribute('data-f')] = inp.type === 'checkbox' ? inp.checked : inp.value; });
+          // Có link chơi hợp lệ thì tự bỏ trạng thái đang cập nhật để User bấm được.
+          if (String(body.playUrl || '').trim()) body.comingSoon = false;
           try {
             await api('/api/admin/games/' + encodeURIComponent(id), { method: 'PATCH', body: JSON.stringify(body) });
             toast('Đã lưu ' + id);
@@ -787,7 +809,7 @@ hr.sep{border:none;border-top:1px solid var(--line);margin:18px 0}
       playMode: $('gPlayMode').value,
       iconUrl: $('gIconUrl').value.trim(),
       visible: $('gVisible').checked,
-      comingSoon: $('gComingSoon').checked,
+      comingSoon: $('gComingSoon').checked && !$('gPlay').value.trim(),
       enabled: true
     };
     try {
@@ -805,6 +827,8 @@ hr.sep{border:none;border-top:1px solid var(--line);margin:18px 0}
       const s = await loadSettingsRaw();
       const set = (id, v) => { if ($(id)) $(id).value = v ?? ''; };
       set('getkeyv2MaxPerDay', s.getkeyv2MaxPerDay ?? 2);
+      set('getkeyv2KeyHours', s.getkeyv2KeyHours ?? 18);
+      set('getkeyv3Url', s.getkeyv3Url || 'https://tool.skidvn.com/');
       set('getkeyv2LinkMinutes', s.getkeyv2LinkMinutes ?? 5);
       set('indexKeyMinutes', s.indexKeyMinutes ?? 30);
       set('link4mBaseUrl', s.link4mBaseUrl ?? 'https://link4m.co/api-shorten/v2');
@@ -846,6 +870,8 @@ hr.sep{border:none;border-top:1px solid var(--line);margin:18px 0}
       const split = (id) => $(id).value.split(/[,，]/).map((x) => x.trim()).filter(Boolean);
       await saveSettingsPatch({
         getkeyv2MaxPerDay: num('getkeyv2MaxPerDay', 2),
+        getkeyv2KeyHours: num('getkeyv2KeyHours', 18),
+        getkeyv3Url: $('getkeyv3Url').value.trim(),
         getkeyv2LinkMinutes: num('getkeyv2LinkMinutes', 5),
         indexKeyMinutes: num('indexKeyMinutes', 30),
         link4mBaseUrl: $('link4mBaseUrl').value.trim(),
