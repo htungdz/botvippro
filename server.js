@@ -7,7 +7,12 @@ const os = require('os');
 const { spawn } = require('child_process');
 const multer = require('multer');
 let ytdlp = null;
-try { ytdlp = require('youtube-dl-exec'); } catch (_) {}
+try {
+  // Use the yt-dlp binary installed by Nixpacks; do not download a second binary during npm install.
+  ytdlp = require('youtube-dl-exec').create('yt-dlp');
+} catch (err) {
+  console.error('[yt-dlp] Không khởi tạo được:', err.message);
+}
 
 class Engine {
     constructor() {
