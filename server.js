@@ -1555,7 +1555,32 @@ Chọn lệnh bên dưới và làm theo từng bước:
 
 🔐 <b>Lệnh /nhapkey KEY</b>
 <blockquote>Nhập key ALL GAME đã nhận để kích hoạt trên trang công cụ.
-📌 <b>Ví dụ:</b> <code>/nhapkey ABCD-1234</code></blockquote>`;
+📌 <b>Ví dụ:</b> <code>/nhapkey ABCD-1234</code></blockquote>
+
+🧾 <b>CÁC LỆNH TÀI KHOẢN & TRẠNG THÁI</b>
+<blockquote>
+• <code>/mykey</code> — xem key và thời hạn đang dùng.
+• <code>/id</code> — xem Telegram ID.
+• <code>/status</code> — xem yêu cầu đang chờ xử lý.
+• <code>/check</code> — kiểm tra trạng thái tài khoản.
+• <code>/checkip</code> — xem thông tin IP.
+• <code>/checkdevice</code> — xem thiết bị đã liên kết.
+• <code>/resetkeytx KEY</code> — gửi yêu cầu reset thiết bị key.
+• <code>/version</code> — xem phiên bản bot.
+</blockquote>
+
+🧰 <b>CÁC LỆNH TIỆN ÍCH</b>
+<blockquote>
+• <code>/support</code> — liên hệ hỗ trợ.
+• <code>/feedback</code> — gửi góp ý cho Admin.
+• <code>/infotiktok username</code> — xem thông tin kênh TikTok.
+• <code>/videotiktok LINK</code> — xem thông tin video TikTok.
+• <code>/checkfb LINK</code> — kiểm tra liên kết Facebook.
+• <code>/checkig LINK</code> — kiểm tra liên kết Instagram.
+• <code>/checkyt LINK</code> — kiểm tra liên kết YouTube.
+• <code>/cancel</code> — hủy thao tác đang thực hiện.
+• <code>/help</code> hoặc <code>/menu</code> — mở lại danh sách lệnh.
+</blockquote>`;
     const rows = [];
     const appBase = ensureHttps(process.env.PUBLIC_URL || process.env.WEB_URL || '');
     if (appBase) {
@@ -4408,25 +4433,32 @@ ${info.private ? '🔒 Private' : '🌐 Public'}
   // Telegram command keyboard: keep the main customer commands aligned with /help.
   tg('setMyCommands', { commands: [
     { command: 'start', description: 'Mở menu / Mini App' },
-    { command: 'help', description: 'Hướng dẫn lệnh' },
+    { command: 'help', description: 'Xem toàn bộ lệnh bot' },
+    { command: 'menu', description: 'Mở lại danh sách lệnh' },
     { command: 'getkey', description: 'Làm nhiệm vụ mở MD5 miễn phí' },
     { command: 'getkeyv2', description: 'Vượt 2 link nhận key ALL GAME' },
     { command: 'sunwindemo', description: 'Nhận file Sunwin Demo' },
-    { command: 'aucuoclc79vip', description: 'Nhận đủ 2 file SCR AUTOCUOC LC79 VIP' },
-    { command: 'taivdtik', description: 'Tải TikTok: MP3 / video / cả hai' },
-    { command: 'muakeytx', description: 'Bảng giá và mua key' },
-    { command: 'nhapkey', description: 'Kích hoạt key' },
-    { command: 'mykey', description: 'Kiểm tra key' },
-    { command: 'id', description: 'Xem Telegram ID của bạn' },
+    { command: 'aucuoclc79vip', description: 'Nhận file Auto cược LC79 VIP' },
+    { command: 'taivdtik', description: 'Tải TikTok MP3 / video' },
+    { command: 'muakeytx', description: 'Xem gói và mua key' },
+    { command: 'nhapkey', description: 'Kích hoạt key ALL GAME' },
+    { command: 'mykey', description: 'Kiểm tra key đang dùng' },
+    { command: 'id', description: 'Xem Telegram ID' },
+    { command: 'status', description: 'Xem yêu cầu đang chờ' },
+    { command: 'check', description: 'Kiểm tra trạng thái tài khoản' },
+    { command: 'checkip', description: 'Xem thông tin IP' },
+    { command: 'checkdevice', description: 'Xem thiết bị đã liên kết' },
+    { command: 'resetkeytx', description: 'Yêu cầu reset thiết bị key' },
     { command: 'support', description: 'Liên hệ hỗ trợ' },
     { command: 'infotiktok', description: 'Thông tin kênh TikTok' },
     { command: 'videotiktok', description: 'Thông tin video TikTok' },
-    { command: 'resetkeytx', description: 'Reset thiết bị của key' },
-    { command: 'checkfb', description: 'Check Facebook' },
-    { command: 'checkig', description: 'Check Instagram' },
-    { command: 'checkyt', description: 'Check YouTube' },
+    { command: 'checkfb', description: 'Kiểm tra Facebook' },
+    { command: 'checkig', description: 'Kiểm tra Instagram' },
+    { command: 'checkyt', description: 'Kiểm tra YouTube' },
     { command: 'feedback', description: 'Gửi góp ý' },
-    { command: 'cancel', description: 'Hủy thao tác' }
+    { command: 'cancel', description: 'Hủy thao tác hiện tại' },
+    { command: 'done', description: 'Xác nhận đã hoàn thành bước' },
+    { command: 'version', description: 'Xem phiên bản bot' }
   ] }).catch(e => console.warn('[telegram] setMyCommands:', e.message));
   loop();
   console.log(`[telegram] cmd-only bot started; admins=${adminIds.size}`);
