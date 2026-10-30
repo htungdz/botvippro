@@ -1524,9 +1524,6 @@ Chọn lệnh bên dưới và làm theo từng bước:
 📋 <b>Nội dung mẫu:</b> <code>${esc(promo)}</code>
 📌 <b>Ví dụ:</b> <code>/getkey</code></blockquote>
 
-🔓 <b>Lệnh /md5free</b>
-<blockquote>Vượt một liên kết quảng cáo duy nhất. Khi trang đích báo thành công, bot tự nhận diện Telegram ID và mở quyền MD5 cùng quyền nhận file. Không tạo key, không cần nhập mã.
-📌 <b>Ví dụ:</b> <code>/md5free</code></blockquote>
 
 📦 <b>Lệnh /sunwindemo</b>
 <blockquote>Bot gửi file Sunwin Demo do Admin cài đặt. Đây là lệnh gửi tệp, không phải lệnh dự đoán.
@@ -3120,7 +3117,7 @@ async function lookupInstagram(input) {
       const cfg = options.getConfig();
       cfg.announceText = argText.slice(0,1000);
       if (options.saveConfig) options.saveConfig(cfg);
-      return send(chatId, '✅ Đã lưu thông báo (user xem /thongbao):\n'+esc(cfg.announceText).slice(0,200));
+      return send(chatId, '✅ Đã lưu thông báo (đã lưu):\n'+esc(cfg.announceText).slice(0,200));
     }
     if (cmd === 'logs') {
       if (!isAdmin(fromId)) return send(chatId, '⛔ Chỉ admin.');
@@ -3588,9 +3585,6 @@ hoặc: <code>/setbank VCB 0123456789 NGUYEN VAN A</code>`);
     if (data === 'buy_menu') return showBuyMenu(chatId);
     if (data === 'cmd:getkey') return startGroupKeyTask(chatId, fromId, cq.from);
     if (data === 'cmd:getkeyv2') return startGetkeyV2(chatId, fromId, cq.from);
-    if (data === 'cmd:getkeyv3') {
-      return send(chatId, 'ℹ️ Lệnh /getkeyv3 đã tắt.\nDùng <code>/getkey</code> hoặc <code>/getkeyv2</code> · hoặc <code>/muakeytx</code> mua key.');
-    }
     if (data === 'cmd:feedback') {
       const sessions = options.getSessions(); sessions[fromId] = { type: 'feedback', startedAt: Date.now() }; options.saveSessions(sessions);
       return send(chatId, '📝 <b>GỬI GÓP Ý</b>\nGửi một ảnh kèm nội dung trong phần chú thích ảnh. Admin sẽ xem trước khi đăng lên kênh.');
@@ -3883,14 +3877,14 @@ hoặc: <code>/setbank VCB 0123456789 NGUYEN VAN A</code>`);
     if (text.startsWith('/') && isAdmin(fromId)) {
       const adminCmd = text.split(/\s+/)[0].toLowerCase().replace(/^\//, '').split('@')[0];
       const customerCommands = new Set([
-        'start','help','menu','guide','support','hotro','status',
-        'muakeytx','buy','pay','mykey','my_key',
-        'getkey','getkeyv1','getkeyv2','getkeyv3','md5free','nhapkey','activate','sunwindemo','autocuoclc79','aucuoclc79vip','autocuoclc79vip','taivdtik','setfile','setdesc',
+        'start','help','menu','support','hotro','status',
+        'muakeytx','buy','mykey','my_key',
+        'getkey','getkeyv1','getkeyv2','nhapkey','activate','sunwindemo','autocuoclc79','aucuoclc79vip','autocuoclc79vip','taivdtik','setfile','setdesc',
         'feedback','infotiktok','videotiktok','infotik','checktt','tiktok','tt',
-        'cancel','done','resetkeytx','resetkey','id','myid','check','checkme','me','checkip','ip',
+        'cancel','done','resetkeytx','resetkey','id','myid','check','checkip','ip',
         'checkdevice','device','checkfb','infofb','facebook','fb',
         'checkig','instagram','ig','checkyt','youtube','yt',
-        'checkstatus','trangthai','version','ver','server','time','gio','thongbao'
+        'version','ver','server'
       ]);
       const adminBase = ensureHttps(process.env.PUBLIC_URL || process.env.WEB_URL || '');
       if (!customerCommands.has(adminCmd)) {
@@ -3906,15 +3900,15 @@ hoặc: <code>/setbank VCB 0123456789 NGUYEN VAN A</code>`);
     // Bot chỉ là Key Center; mọi cấu hình/quản trị nằm trong Index Admin.
     // Also allow TikTok lookup + getkeyv2 + done
     const keyCenterCommands = new Set([
-      'start','menu','help','guide','support','hotro',
-      'getkey','getkeyv1','getkeyv2','getkeyv3','md5free','status','sunwindemo','autocuoclc79','aucuoclc79vip','autocuoclc79vip','taivdtik',
-      'nhapkey','activate','muakeytx','buy','pay','mykey','my_key',
+      'start','menu','help','support','hotro',
+      'getkey','getkeyv1','getkeyv2','status','sunwindemo','autocuoclc79','aucuoclc79vip','autocuoclc79vip','taivdtik',
+      'nhapkey','activate','muakeytx','buy','mykey','my_key',
       'cancel','feedback','done','resetkeytx','resetkey',
       'infotiktok','videotiktok','infotik','checktt','tiktok','tt',
-      'check','checkme','me','id','myid','checkip','ip','checkdevice','device',
+      'check','id','myid','checkip','ip','checkdevice','device',
       'checkfb','infofb','facebook','fb','checkig','instagram','ig',
-      'checkyt','youtube','yt','checkstatus','trangthai','version','ver','server',
-      'time','gio','thongbao'
+      'checkyt','youtube','yt','version','ver','server',
+      
     ]);
     if (!keyCenterCommands.has(cmd) && !['done','xong','hoanthanh'].includes(text.toLowerCase().trim())) {
       return showUserMenu(chatId);
@@ -3955,7 +3949,6 @@ hoặc: <code>/setbank VCB 0123456789 NGUYEN VAN A</code>`);
       const cfg = options.getConfig() || {}; cfg[settingsSlot + 'Caption'] = caption; if (options.saveConfig) options.saveConfig(cfg);
       return send(chatId, '✅ Đã cập nhật mô tả cho /' + settingsSlot + '.');
     }
-    if (cmd === 'md5free') { if (!(await enforceFileUnlock(chatId, fromId, cmd))) return; const ticket = makeFreeAccessTicket(fromId, 'md5free-command'); const base = getPublicBase(); const appUrl = base ? base + '/?freeTicket=' + encodeURIComponent(ticket) : ''; return send(chatId, appUrl ? '✅ <b>MD5 FREE ĐÃ MỞ</b>\nKhông cần key. Bấm nút để vào và sử dụng ngay.' : '✅ Quyền MD5 đã mở cho tài khoản Telegram của bạn. Hãy mở trang công cụ.', appUrl ? { reply_markup: { inline_keyboard: [[{ text: '🚀 MỞ CÔNG CỤ NGAY', url: appUrl }]] } } : {}); }
     if (cmd === 'sunwindemo') { if (!(await enforceFileUnlock(chatId, fromId, cmd))) return; return sendStoredAsset(chatId, 'sunwindemo'); }
     if (['autocuoclc79','aucuoclc79vip','autocuoclc79vip'].includes(cmd)) { if (!(await enforceFileUnlock(chatId, fromId, cmd))) return; return sendStoredAsset(chatId, 'autocuocLC79'); }
     if (cmd === 'taivdtik') {
@@ -3974,7 +3967,7 @@ hoặc: <code>/setbank VCB 0123456789 NGUYEN VAN A</code>`);
       if (['feedback', 'gopy'].includes(payload.toLowerCase())) { const ss = options.getSessions(); ss[fromId] = { type: 'feedback', startedAt: Date.now() }; options.saveSessions(ss); return send(chatId, '📝 <b>Gửi góp ý</b>\nGửi 1 ảnh kèm nội dung ở phần chú thích ảnh. Admin sẽ xem trước khi đăng.'); }
       return showStart(chatId, displayName(from), from);
     }
-    if (cmd === 'menu' || cmd === 'help' || cmd === 'guide') return showUserMenu(chatId);
+    if (cmd === 'menu' || cmd === 'help') return showUserMenu(chatId);
     if (cmd === 'feedback') {
       sessions[fromId] = { type: 'feedback', startedAt: Date.now() }; options.saveSessions(sessions);
       return send(chatId, '📝 <b>GỬI GÓP Ý</b>\nGửi <b>1 ảnh</b> kèm nội dung ở phần chú thích (caption).\nAdmin sẽ duyệt trước khi đăng.\n\nVí dụ: “Bảng lịch sử trên iPhone bị tràn màn hình”.');
@@ -3988,16 +3981,6 @@ hoặc: <code>/setbank VCB 0123456789 NGUYEN VAN A</code>`);
 
     if (cmd === 'getkey' || cmd === 'getkeyv1') {
       return startGroupKeyTask(chatId, fromId, from);
-    }
-
-    // ===== /getkeyv3 — backup URL configured by Admin; this third-party site issues its own key =====
-    if (cmd === 'getkeyv3') {
-      const cfg = options.getConfig() || {};
-      const rawUrl = String(cfg.getkeyv3Url || 'https://tool.skidvn.com/').trim();
-      let safeUrl = '';
-      try { const u = new URL(rawUrl); if (u.protocol === 'https:') safeUrl = u.toString(); } catch (_) {}
-      if (!safeUrl) return send(chatId, '⚠️ Link dự phòng V3 chưa hợp lệ. Nhờ Admin kiểm tra mục Hệ thống → Link nhận key V3.');
-      return send(chatId, `🔑 <b>GETKEY V3 · LINK DỰ PHÒNG</b>\n━━━━━━━━━━━━━━━━━━━━\nMở trang dự phòng bên dưới và làm theo hướng dẫn của dịch vụ.\n⚠️ Đây là dịch vụ ngoài; bot không xác minh hoặc tự gia hạn key do trang đó cấp.\nNếu link lỗi, dùng <code>/getkey</code> hoặc <code>/getkeyv2</code>.\n\n@SunNetWin`, { reply_markup: { inline_keyboard: [[{ text: '🌐 Mở trang nhận key V3', url: safeUrl }]] } });
     }
 
     // ===== /getkeyv2 — hai Link4M rồi cấp key ALL GAME =====
@@ -4152,10 +4135,6 @@ Hoặc mở trang công cụ, dán key vào ô kích hoạt.
       return showBuyMenu(chatId);
     }
 
-    if (cmd === 'pay') {
-      const planId = (args[0] || '').toLowerCase();
-      return startPayment(chatId, fromId, planId);
-    }
 
     if (cmd === 'help') {
       return showStart(chatId, displayName(from), from);
@@ -4209,14 +4188,9 @@ Bạn có thể đăng nhập lại trên thiết bị mới trong Mini App.
     if (cmd === 'id' || cmd === 'myid') {
       return send(chatId, '🆔 Telegram ID:\n<code>' + fromId + '</code>\nUsername: @' + (from.username || '—'));
     }
-    if (cmd === 'time' || cmd === 'gio') {
-      return send(chatId, '🕐 <b>' + new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) + '</b>\nGMT+7');
-    }
     if (cmd === 'check') {
       return send(chatId,
 `🔍 <b>Lệnh check thông tin:</b>
-<blockquote><b>/checkme</b> — Thông tin Telegram của bạn
-Ví dụ: <code>/checkme</code></blockquote>
 <blockquote><b>/id</b> · <b>/checkip</b> · <b>/checkdevice</b>
 Ví dụ: <code>/checkip</code></blockquote>
 <blockquote><b>/checktt {username}</b> — TikTok
@@ -4228,8 +4202,7 @@ Ví dụ: <code>/checkfb facebook.com/zuck</code></blockquote>
 Ví dụ: <code>/checkig @instagram</code></blockquote>
 <blockquote><b>/checkyt {@channel|link}</b> — YouTube
 Ví dụ: <code>/checkyt @MrBeast</code></blockquote>
-<blockquote><b>/checkstatus</b> · <b>/version</b> · <b>/server</b>
-Trạng thái bot & hệ thống</blockquote>
+<blockquote><b>/version</b> · <b>/server</b> — Thông tin bot và máy chủ</blockquote>
 🎁 /getkey · 🔗 /getkeyv2 · 💳 /muakeytx · 🔑 /mykey`
       );
     }
@@ -4241,15 +4214,6 @@ Trạng thái bot & hệ thống</blockquote>
       const p = (typeof userProfiles!=='undefined' && userProfiles[fromId]) ? userProfiles[fromId] : null;
       return send(chatId, '📱 <b>THIẾT BỊ</b>\nUA: <code>'+esc(String(p&&p.lastUa||'Mở Mini App để cập nhật').slice(0,140))+'</code>\nDevice: <code>'+esc(String(p&&p.lastDeviceHash||'—').slice(0,16))+'</code>');
     }
-    if (cmd === 'checkme' || cmd === 'me') {
-      const p = (typeof userProfiles!=='undefined' && userProfiles[fromId]) ? userProfiles[fromId] : null;
-      const userKeys = (keys||[]).filter(k => String(k.telegramId)===fromId);
-      const k = userKeys[userKeys.length-1];
-      return send(chatId, '👤 <b>THÔNG TIN CỦA BẠN</b>\n━━━━━━━━━━━━━━━\n🆔 <code>'+fromId+'</code>\n🏷 '+esc(uname)+'\n🔗 @'+(from.username||'—')+'\n🌐 Lang: '+(from.language_code||'—')+'\n⭐ Premium: '+(from.is_premium?'yes':'no')+'\n📡 IP: <code>'+(p&&p.lastIp||'—')+'</code>\n🔑 Key: '+(k?(k.label||'VIP'):'Chưa có')+'\n\n🎁 /getkeyv1 · 💳 /muakeytx');
-    }
-    if (cmd === 'checkstatus' || cmd === 'trangthai' || cmd === 'trangThai') {
-      return send(chatId, '✅ <b>HỆ THỐNG</b>\n🤖 Bot online\n🎮 Game: <b>'+Object.keys(FEEDS).length+'</b>\n🔑 Key: <b>'+keys.length+'</b>\n📦 VIP FINAL');
-    }
     if (cmd === 'mykey' || cmd === 'my_key') {
       const userKeys = (keys||[]).filter(k => String(k.telegramId)===fromId);
       if (!userKeys.length) return send(chatId, '🔑 Bạn chưa có key.\n🎁 /getkeyv1 · 💎 /muakeytx');
@@ -4260,18 +4224,9 @@ Trạng thái bot & hệ thống</blockquote>
       });
       return send(chatId, '🔑 <b>KEY CỦA BẠN</b>\n'+lines.join('\n\n'));
     }
-    if (cmd === 'guide' || cmd === 'huongdan' || cmd === 'trogiup') {
-      return send(chatId, '📖 <b>HƯỚNG DẪN</b>\n1️⃣ /start → mở Mini App\n2️⃣ Nhập key → đăng nhập\n3️⃣ Chọn game xem dự đoán\n\n🎁 /getkey · 💎 /muakeytx\n🔄 /resetkeytx · 🔑 /mykey');
-    }
     if (cmd === 'support' || cmd === 'hotro') {
       const cfg = (options.getConfig&&options.getConfig())||{};
       return send(chatId, '💬 <b>HỖ TRỢ</b>\n'+(cfg.supportUrl||'https://t.me/SunNetWin')+'\nAdmin: @SunNetWin');
-    }
-    if (cmd === 'thongbao' || cmd === 'thongBao' || cmd === 'announce') {
-      const cfg = (options.getConfig&&options.getConfig())||{};
-      const custom = String(cfg.announceText||'').trim();
-      if (custom) return send(chatId, '📢 <b>THÔNG BÁO</b>\n'+custom);
-      return send(chatId, '📢 Tool ổn định · TX/MD5/Sicbo · @SunNetWin');
     }
     if (cmd === 'version' || cmd === 'ver') {
       return send(chatId, '📦 <b>VIP FINAL</b> · All-bot admin');
@@ -4382,7 +4337,7 @@ ${info.private ? '🔒 Private' : '🌐 Public'}
     }
 
     if (text.startsWith('/')) {
-      return send(chatId, '❓ Lệnh không rõ. Gõ /start · /check · /checktt @user · /guide');
+      return send(chatId, '❓ Lệnh không rõ. Gõ /start · /check · /checktt @user · /help');
     }
   }
 
@@ -4456,17 +4411,13 @@ ${info.private ? '🔒 Private' : '🌐 Public'}
     { command: 'help', description: 'Hướng dẫn lệnh' },
     { command: 'getkey', description: 'Làm nhiệm vụ mở MD5 miễn phí' },
     { command: 'getkeyv2', description: 'Vượt 2 link nhận key ALL GAME' },
-    { command: 'md5free', description: 'Mở MD5 miễn phí không cần key' },
     { command: 'sunwindemo', description: 'Nhận file Sunwin Demo' },
     { command: 'aucuoclc79vip', description: 'Nhận đủ 2 file SCR AUTOCUOC LC79 VIP' },
     { command: 'taivdtik', description: 'Tải TikTok: MP3 / video / cả hai' },
-    { command: 'getkeyv3', description: 'Mở trang nhận key dự phòng' },
     { command: 'muakeytx', description: 'Bảng giá và mua key' },
     { command: 'nhapkey', description: 'Kích hoạt key' },
     { command: 'mykey', description: 'Kiểm tra key' },
     { command: 'id', description: 'Xem Telegram ID của bạn' },
-    { command: 'checkstatus', description: 'Kiểm tra trạng thái bot' },
-    { command: 'guide', description: 'Xem lại hướng dẫn sử dụng' },
     { command: 'support', description: 'Liên hệ hỗ trợ' },
     { command: 'infotiktok', description: 'Thông tin kênh TikTok' },
     { command: 'videotiktok', description: 'Thông tin video TikTok' },
@@ -5565,7 +5516,6 @@ let botSettings = loadJSON(SETTINGS_FILE, null) || {
   autocuocLC79Caption: 'SCR AUTOCUOC LC79 VIP',
   autoPinKeys: true,
   autoReplaceBotMessages: true,
-  getkeyv3Url: 'https://tool.skidvn.com/',
   indexKeyMinutes: 30,
   link4mBaseUrl: 'https://link4m.co/api-shorten/v2',
   link4mApiToken: '',
@@ -5655,7 +5605,6 @@ function normalizeSettings(value) {
     autocuocLC79Caption: String(v.autocuocLC79Caption || 'SCR AUTOCUOC LC79 VIP').slice(0, 900),
     autoPinKeys: v.autoPinKeys !== false,
     autoReplaceBotMessages: v.autoReplaceBotMessages !== false,
-    getkeyv3Url: String(v.getkeyv3Url || 'https://tool.skidvn.com/').trim().slice(0, 300),
     indexKeyMinutes: Math.min(180, Math.max(5, Number(v.indexKeyMinutes ?? 30))),
     link4mBaseUrl: String(v.link4mBaseUrl || 'https://link4m.co/api-shorten/v2').trim().slice(0, 200),
     link4mApiToken: String(v.link4mApiToken || '').trim().slice(0, 120),
