@@ -1,8 +1,9 @@
 [phases.setup]
-nixPkgs = ["python311", "ffmpeg"]
+# Include Node.js (npm is bundled with it), plus the tools required by the app.
+nixPkgs = ["nodejs_20", "python311", "ffmpeg", "yt-dlp"]
 
 [phases.install]
-cmds = ["npm install --omit=dev"]
+cmds = ["YOUTUBE_DL_SKIP_DOWNLOAD=true npm install --omit=dev"]
 
 [start]
 cmd = "node server.js"
