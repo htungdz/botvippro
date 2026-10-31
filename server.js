@@ -1303,9 +1303,16 @@ function startTelegramBot(options) {
     const cfg = options.getConfig() || {};
     if (cfg.fileUnlockEnabled === false) return true;
     const uid = String(userId);
-    if (fileUnlocks[uid] && (fileUnlocks[uid].filesAccess === true || fileUnlocks[uid].unlockedAt)) {
-      // Accounts that unlocked files before the dual entitlement model keep their access.
-      if (fileUnlocks[uid].md5Access !== true || fileUnlocks[uid].filesAccess !== true || fileUnlocks[uid].revoked) grantMd5FreeAccess(uid, 'legacy-file-unlock-migration', true);
+    const savedGrant = fileUnlocks[uid] && typeof fileUnlocks[uid] === 'object' ? fileUnlocks[uid] : null;
+    // Explicit Admin revocation must win; do not silently recreate a revoked grant.
+    if (savedGrant && savedGrant.revoked === true) {
+      await send(chatId, '⛔ Quyền dùng lệnh file/MD5 của tài khoản này đã bị Admin thu hồi. Liên hệ @SunNetWin nếu cần hỗ trợ.');
+      return false;
+    }
+    if (savedGrant && savedGrant.filesAccess === true && savedGrant.md5Access === true) return true;
+    if (savedGrant && savedGrant.unlockedAt) {
+      // Migrate older grants only when they were not explicitly revoked.
+      grantMd5FreeAccess(uid, 'legacy-file-unlock-migration', true);
       return true;
     }
     const now = Date.now();
@@ -1338,7 +1345,7 @@ function startTelegramBot(options) {
     await send(chatId,
 `🔐 <b>MỞ QUYỀN NHẬN FILE</b>
 ━━━━━━━━━━━━━━━━
-Hoàn thành một liên kết quảng cáo để mở MD5 và quyền dùng các lệnh file/TikTok vĩnh viễn theo Telegram ID. Khi trang đích xác nhận thành công, bot tự nhận quyền; nếu bạn đang gọi lệnh gửi file, bot sẽ tự gửi file đó.
+Hoàn thành liên kết Link4M một lần để mở TOOL HASH (MD5/SHA-256) và quyền file theo Telegram ID vĩnh viễn. Khi Link4M chuyển về trang xác nhận, bot tự lưu quyền và nhắn bạn gửi hash ngay.
 
 ${esc(pending.shortUrl)}`,
       { reply_markup: { inline_keyboard: [[{ text: '🔓 MỞ LIÊN KẾT XÁC NHẬN', url: pending.shortUrl }]] } });
@@ -1398,13 +1405,180 @@ ${esc(pending.shortUrl)}`,
     if (!response.ok || !data.ok) throw new Error(data.description || method + ' failed');
     return data.result;
   }
+
+  // Chạy yt-dlp qua child_process có timeout cứng để không treo lệnh khi upstream bị chặn.
+  function runYtDlp(args, timeoutMs = 35000, maxOutputBytes = 4 * 1024 * 1024) {
+    return new Promise((resolve, reject) => {
+      let child;
+      let stdout = '';
+      let stderr = '';
+      let settled = false;
+      const finish = (err, value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (err) reject(err); else resolve(value);
+      };
+      const timer = setTimeout(() => {
+        try { child && child.kill('SIGKILL'); } catch (_) {}
+        finish(new Error('TikTok quá thời gian xử lý (' + Math.round(timeoutMs / 1000) + ' giây).'));
+      }, timeoutMs);
+      try {
+        child = spawn('yt-dlp', args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+        child.stdout.on('data', chunk => {
+          stdout += chunk.toString('utf8');
+          if (Buffer.byteLength(stdout, 'utf8') > maxOutputBytes) {
+            try { child.kill('SIGKILL'); } catch (_) {}
+            finish(new Error('Dữ liệu trả về quá lớn, đã dừng xử lý an toàn.'));
+          }
+        });
+        child.stderr.on('data', chunk => { if (stderr.length < 12000) stderr += chunk.toString('utf8'); });
+        child.on('error', err => finish(new Error('Không chạy được yt-dlp: ' + err.message)));
+        child.on('close', code => {
+          if (code !== 0) return finish(new Error((stderr.trim().split('\n').slice(-3).join(' ') || ('yt-dlp exit ' + code)).slice(0, 700)));
+          finish(null, stdout);
+        });
+      } catch (e) { finish(e); }
+    });
+  }
+
+  async function downloadTelegramDocument(fileId, maxBytes = 5 * 1024 * 1024) {
+    const meta = await tg('getFile', { file_id: fileId });
+    const filePath = String(meta && meta.file_path || '');
+    if (!filePath || filePath.includes('..')) throw new Error('Telegram không trả đường dẫn file hợp lệ.');
+    if (Number(meta.file_size || 0) > maxBytes) throw new Error('File vượt giới hạn 5 MB.');
+    const safePath = filePath.split('/').map(encodeURIComponent).join('/');
+    const response = await fetch('https://api.telegram.org/file/bot' + token + '/' + safePath, { signal: AbortSignal.timeout(20000) });
+    if (!response.ok) throw new Error('Không tải được file từ Telegram (HTTP ' + response.status + ').');
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (bytes.length > maxBytes) throw new Error('File vượt giới hạn 5 MB.');
+    return bytes;
+  }
+
+  function inspectGameHash(raw) {
+    const hash = String(raw || '').trim().toLowerCase();
+    const algorithm = hash.length === 32 ? 'MD5' : hash.length === 64 ? 'SHA-256' : '';
+    if (!algorithm || !/^[a-f0-9]+$/.test(hash)) throw new Error('Hash không hợp lệ. Cần đúng 32 ký tự MD5 hoặc 64 ký tự SHA-256.');
+    const bytes = Buffer.from(hash, 'hex');
+    const freq = Object.fromEntries('0123456789abcdef'.split('').map(c => [c, 0]));
+    for (const c of hash) freq[c]++;
+    let bitsSet = 0;
+    for (const b of bytes) { let x = b; while (x) { bitsSet += x & 1; x >>>= 1; } }
+    let longestRun = 1, run = 1;
+    for (let i = 1; i < hash.length; i++) { run = hash[i] === hash[i - 1] ? run + 1 : 1; longestRun = Math.max(longestRun, run); }
+    const counts = Object.values(freq);
+    const totalNibbles = hash.length;
+    const entropy = -counts.filter(Boolean).reduce((sum, count) => { const q = count / totalNibbles; return sum + q * Math.log2(q); }, 0);
+    const sorted = Object.entries(freq).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    const byteSum = [...bytes].reduce((a, b) => a + b, 0);
+    return { hash, algorithm, bytes: [...bytes], bitsSet, entropy, longestRun, byteSum, freq, sorted, totalBits: bytes.length * 8 };
+  }
+
+  // Một digest đơn lẻ không chứa kết quả Tài/Xỉu có thể giải ngược.
+  // Hàm dưới đây chỉ tạo bộ xúc xắc MÔ PHỎNG có thể lặp lại từ hash, không phải kết quả thật.
+  function simulateDiceFromHash(hash) {
+    const seed = crypto.createHash('sha256').update('BOTVIPPRO-TOOLMD5-DICE-SIM-V1:' + String(hash).toLowerCase()).digest();
+    const dice = [seed[0] % 6 + 1, seed[1] % 6 + 1, seed[2] % 6 + 1];
+    const total = dice.reduce((a, b) => a + b, 0);
+    const triple = dice[0] === dice[1] && dice[1] === dice[2];
+    const side = triple ? 'TAM HOA / ĐẶC BIỆT' : (total >= 11 ? 'TÀI' : 'XỈU');
+    return { dice, total, triple, side };
+  }
+
+  function formatGameHashReport(raw, index = 1) {
+    const a = inspectGameHash(raw);
+    const n = v => Number(v).toLocaleString('vi-VN');
+    const most = a.sorted.slice(0, 4).map(([k, v]) => k.toUpperCase() + ':' + v).join(' · ');
+    const least = a.sorted.slice(-4).reverse().map(([k, v]) => k.toUpperCase() + ':' + v).join(' · ');
+    const sim = simulateDiceFromHash(a.hash);
+    const diceText = sim.dice.map((v, i) => 'Xúc xắc ' + (i + 1) + ': ' + v).join('\n');
+    return `🔬 <b>TOOL HASH PRO · BÁO CÁO #${index}</b>
+━━━━━━━━━━━━━━━━━━
+🧬 Loại mã: <b>${a.algorithm}</b> · <b>${a.hash.length} ký tự hex</b>
+<code>${a.hash}</code>
+
+📏 Độ dài: <b>${a.totalBits} bit · ${a.bytes.length} byte</b>
+⚖️ Bit 1 / 0: <b>${a.bitsSet} / ${a.totalBits - a.bitsSet}</b>
+🎲 Entropy ký tự hex: <b>${a.entropy.toFixed(3)} / 4.000 bit</b>
+🔢 Tổng byte: <b>${n(a.byteSum)}</b>
+🔁 Chuỗi ký tự lặp dài nhất: <b>${a.longestRun}</b>
+📊 Ký tự xuất hiện nhiều: <code>${most}</code>
+📉 Ký tự xuất hiện ít: <code>${least}</code>
+🔹 8 đầu / 8 cuối: <code>${a.hash.slice(0,8)} / ${a.hash.slice(-8)}</code>
+
+🎲 <b>3 VIÊN XÚC XẮC MÔ PHỎNG TỪ HASH</b>
+${diceText}
+➕ Tổng điểm: <b>${sim.total}</b>
+🎯 Hướng mô phỏng: <b>${sim.side}</b>
+
+📊 <b>MỨC TIN CẬY THAM CHIẾU</b>
+• Hash hợp lệ: <b>100%</b>
+• Dự đoán Tài/Xỉu từ riêng digest: <b>không xác định được</b>
+• Mốc tham chiếu trung lập: <b>50% Tài / 50% Xỉu</b> khi loại các bộ ba đặc biệt; xác suất ra bộ ba đồng mặt là <b>2,78%</b>. Luật từng game có thể khác.
+
+⚠️ <b>Quan trọng:</b> Dãy xúc xắc trên là mô phỏng xác định từ chuỗi hash, không phải kết quả ván thật và không phải tín hiệu dự đoán có lợi thế. Muốn kiểm chứng provably-fair cần server seed gốc, client seed, nonce và thuật toán game; không thể suy ra chúng chỉ từ MD5/SHA-256 đơn lẻ.`;
+  }
+
+  function extractGameHashCandidates(textValue) {
+    const text = String(textValue || '');
+    const re = /(^|[^a-f0-9])([a-f0-9]{64}|[a-f0-9]{32})(?![a-f0-9])/gi;
+    const out = [];
+    const seen = new Set();
+    let match;
+    while ((match = re.exec(text)) && out.length < 20) {
+      const hash = String(match[2] || '').toLowerCase();
+      if (!seen.has(hash)) { seen.add(hash); out.push(hash); }
+    }
+    return out;
+  }
+
+  async function reportMd5Input(chatId, input, label = 'nội dung nhập') {
+    const value = String(input || '').trim();
+    if (!value) return send(chatId, '📌 Gửi mã MD5 32 ký tự hoặc SHA-256 64 ký tự (chỉ gồm 0-9, a-f).');
+    if (/^[a-fA-F0-9]{32}$/.test(value) || /^[a-fA-F0-9]{64}$/.test(value)) {
+      return send(chatId, formatGameHashReport(value));
+    }
+    const candidates = extractGameHashCandidates(value);
+    if (candidates.length) {
+      await send(chatId, `📂 <b>ĐÃ NHẬN DIỆN ${candidates.length} HASH</b> · ${esc(label)}\nBot tự phân biệt MD5 32 ký tự và SHA-256 64 ký tự; gửi tối đa 5 báo cáo chi tiết.`);
+      for (let i = 0; i < Math.min(candidates.length, 5); i++) await send(chatId, formatGameHashReport(candidates[i], i + 1));
+      if (candidates.length > 5) await send(chatId, `ℹ️ Còn ${candidates.length - 5} hash chưa hiển thị; hãy chia nhỏ file để xem tiếp.`);
+      return;
+    }
+    return send(chatId, '⚠️ Không nhận diện được mã hash. Hãy gửi đúng 32 ký tự hex (MD5) hoặc 64 ký tự hex (SHA-256), không kèm ký tự khác.');
+  }
+  async function reportMd5File(chatId, document) {
+    const size = Number(document.file_size || 0);
+    if (size > 5 * 1024 * 1024) return send(chatId, '⚠️ File quá lớn. Giới hạn nhận là 5 MB.');
+    const name = String(document.file_name || 'md5-upload.txt').slice(0, 100);
+    if (!/\.(txt|csv|log|json|md5|sha256|sha256sum)$/i.test(name)) return send(chatId, '⚠️ Chỉ nhận file .txt, .csv, .log, .json, .md5 hoặc .sha256.');
+    let progress = null;
+    try {
+      progress = await send(chatId, '📥 Đang đọc file và quét hash...');
+      const buffer = await downloadTelegramDocument(document.file_id);
+      const content = buffer.toString('utf8').replace(/^\uFEFF/, '');
+      const hashes = extractGameHashCandidates(content);
+      const fileMd5 = crypto.createHash('md5').update(buffer).digest('hex');
+      const fileSha256 = crypto.createHash('sha256').update(buffer).digest('hex');
+      const header = `📦 <b>FILE ĐÃ NHẬN</b>\nTên: <code>${esc(name)}</code> · Kích thước: <b>${(buffer.length / 1024).toFixed(1)} KB</b>\nMD5 file: <code>${fileMd5}</code>\nSHA-256 file: <code>${fileSha256}</code>\nHash tìm thấy: <b>${hashes.length}</b> (MD5 32 ký tự / SHA-256 64 ký tự)`;
+      await send(chatId, header);
+      if (!hashes.length) return send(chatId, 'Không tìm thấy mã MD5/SHA-256 trong nội dung. Bot đã tính cả MD5 và SHA-256 của toàn bộ file ở phần trên.');
+      for (let i = 0; i < Math.min(hashes.length, 4); i++) await send(chatId, formatGameHashReport(hashes[i], i + 1));
+      if (hashes.length > 4) return send(chatId, `ℹ️ Còn ${hashes.length - 4} hash khác; bot giới hạn 4 báo cáo chi tiết cho mỗi file.`);
+    } catch (e) {
+      logLine('[toolmd5] file analysis failed: ' + String(e.message || e).slice(0, 240));
+      return send(chatId, '⚠️ ' + esc(String(e.message || 'Không đọc được file.').slice(0, 220)));
+    } finally {
+      if (progress && progress.message_id) tg('deleteMessage', { chat_id: chatId, message_id: progress.message_id }).catch(() => null);
+    }
+  }
   function formatTikTokInfo(info) {
     const date = String(info.upload_date || '');
     const dateLabel = /^\d{8}$/.test(date) ? date.slice(6,8) + '/' + date.slice(4,6) + '/' + date.slice(0,4) : '—';
     const n = v => (v === null || v === undefined || v === '') ? '—' : (Number.isFinite(Number(v)) ? Number(v).toLocaleString('vi-VN') : '—');
     const duration = Number(info.duration || 0);
     const dur = duration ? String(Math.floor(duration/60)).padStart(2,'0') + ':' + String(Math.floor(duration%60)).padStart(2,'0') : '—';
-    return `🎵 <b>THÔNG TIN VIDEO TIKTOK</b>\n━━━━━━━━━━━━━━━━\n📝 <b>${esc(info.title || 'Video TikTok')}</b>\n👤 Tác giả: <b>${esc(info.uploader || info.channel || '—')}</b>\n🆔 ID: <code>${esc(info.id || '—')}</code>\n⏱ Thời lượng: <b>${dur}</b>\n📐 Chất lượng: <b>${n(info.width)} × ${n(info.height)}</b>\n🎞 FPS: <b>${n(info.fps)}</b>\n📦 Dung lượng ước tính: <b>${info.filesize_approx ? (Number(info.filesize_approx)/1024/1024).toFixed(1)+' MB' : '—'}</b>\n👁 Lượt xem: <b>${n(info.view_count)}</b>\n❤️ Lượt thích: <b>${n(info.like_count)}</b>\n📅 Ngày đăng: <b>${dateLabel}</b>\n📝 Mô tả: ${esc(String(info.description || '—').slice(0, 220))}\n\nChọn định dạng muốn nhận bên dưới.\n<small>Chỉ tải nội dung bạn sở hữu hoặc được phép sử dụng.</small>`;
+    return `🎵 <b>THÔNG TIN VIDEO TIKTOK</b>\n━━━━━━━━━━━━━━━━\n📝 <b>${esc(info.title || 'Video TikTok')}</b>\n👤 Tác giả: <b>${esc(info.uploader || info.channel || '—')}</b>\n🆔 ID: <code>${esc(info.id || '—')}</code>\n⏱ Thời lượng: <b>${dur}</b>\n📐 Chất lượng: <b>${n(info.width)} × ${n(info.height)}</b> · ${n(info.fps)} FPS\n📦 Dung lượng ước tính: <b>${info.filesize_approx ? (Number(info.filesize_approx)/1024/1024).toFixed(1)+' MB' : '—'}</b>\n👁 Lượt xem: <b>${n(info.view_count)}</b> · ❤️ Thích: <b>${n(info.like_count)}</b> · 💬 Bình luận: <b>${n(info.comment_count)}</b>\n🔁 Chia sẻ: <b>${n(info.repost_count ?? info.share_count)}</b> · 📅 Đăng: <b>${dateLabel}</b>\n📝 Mô tả: ${esc(String(info.description || '—').slice(0, 220))}\n\nChọn định dạng muốn nhận bên dưới.\n<small>Chỉ tải nội dung bạn sở hữu hoặc được phép sử dụng.</small>`;
   }
   function validTikTokUrl(raw) {
     try {
@@ -1413,13 +1587,14 @@ ${esc(pending.shortUrl)}`,
     } catch (_) { return ''; }
   }
   async function inspectTikTok(chatId, fromId, rawUrl) {
-    if (!ytdlp) { logLine('[tiktok] youtube-dl-exec package unavailable'); return send(chatId, '⚠️ Tính năng tải video đang được chuẩn bị. Bạn thử lại sau nhé.'); }
+    if (!ytdlp) { logLine('[tiktok] youtube-dl-exec package unavailable'); return send(chatId, '⚠️ Máy chủ chưa có yt-dlp. Admin kiểm tra cấu hình Railway rồi thử lại.'); }
     const url = validTikTokUrl(rawUrl);
     if (!url) return send(chatId, '🔗 Link chưa đúng định dạng. Hãy gửi link video TikTok công khai nhé.');
-    await send(chatId, '🔎 Đang lấy thông tin video...');
+    let progressMessage = null;
     try {
-      const output = await ytdlp(url, { dumpSingleJson: true, skipDownload: true, noPlaylist: true, noWarnings: true, socketTimeout: 20, retries: 1 });
-      const info = typeof output === 'string' ? JSON.parse(output) : output;
+      progressMessage = await send(chatId, '🔎 Đang lấy thông tin video (tối đa 35 giây)...');
+      const output = await runYtDlp(['--dump-single-json','--skip-download','--no-playlist','--no-warnings','--socket-timeout','15','--retries','1','--',url], 35000, 4 * 1024 * 1024);
+      const info = JSON.parse(output);
       const sessions = options.getSessions();
       sessions[String(fromId)] = { type: 'tiktok_choice', url, info: { id: info.id, title: info.title, description: info.description, uploader: info.uploader, channel: info.channel, duration: info.duration, width: info.width, height: info.height, fps: info.fps, filesize_approx: info.filesize_approx, view_count: info.view_count, like_count: info.like_count, upload_date: info.upload_date }, expiresAt: Date.now() + 10 * 60 * 1000 };
       options.saveSessions(sessions);
@@ -1430,6 +1605,8 @@ ${esc(pending.shortUrl)}`,
     } catch (e) {
       logLine('[tiktok] metadata lookup failed: ' + String(e.message || e).slice(0,280));
       return send(chatId, '⚠️ Chưa đọc được video này. Hãy kiểm tra link, bảo đảm video đang công khai rồi thử lại nhé.');
+    } finally {
+      if (progressMessage && progressMessage.message_id) tg('deleteMessage', { chat_id: chatId, message_id: progressMessage.message_id }).catch(() => null);
     }
   }
   async function downloadTikTokAndSend(chatId, fromId, mode) {
@@ -1440,7 +1617,7 @@ ${esc(pending.shortUrl)}`,
       return send(chatId, '⌛ Lựa chọn đã hết hạn. Gõ /taivdtik và gửi lại link video nhé.');
     }
     if (!['audio','video','both'].includes(mode)) return;
-    if (!ytdlp) return send(chatId, '⚠️ Tính năng tải video đang được chuẩn bị.');
+    if (!ytdlp) return send(chatId, '⚠️ Máy chủ chưa có yt-dlp. Admin kiểm tra cấu hình Railway.');
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tooltt-tiktok-'));
     const output = path.join(tmpDir, '%(id)s.%(ext)s');
     const info = sess.info || {};
@@ -1450,7 +1627,7 @@ ${esc(pending.shortUrl)}`,
       const tasks = [];
       if (mode === 'video' || mode === 'both') {
         tasks.push((async () => {
-          await ytdlp(sess.url, { output, noPlaylist: true, noWarnings: true, format: 'bv*[height<=1080]+ba/b[height<=1080]/b', mergeOutputFormat: 'mp4', maxFilesize: '48M', socketTimeout: 30, retries: 1 });
+          await runYtDlp(['--output',output,'--no-playlist','--no-warnings','--format','bv*[height<=1080]+ba/b[height<=1080]/b','--merge-output-format','mp4','--max-filesize','48M','--socket-timeout','25','--retries','1','--',sess.url], 90000, 1024 * 1024);
           const file = fs.readdirSync(tmpDir).map(n => path.join(tmpDir,n)).find(f => /\.(mp4|mkv|webm)$/i.test(f) && fs.statSync(f).isFile());
           if (!file) throw new Error('Video output file missing; check ffmpeg');
           await uploadTelegramFile('sendVideo', chatId, 'video', file, '🎬 <b>' + title + '</b>');
@@ -1458,7 +1635,7 @@ ${esc(pending.shortUrl)}`,
       }
       if (mode === 'audio' || mode === 'both') {
         tasks.push((async () => {
-          await ytdlp(sess.url, { output, noPlaylist: true, noWarnings: true, format: 'bestaudio/best', extractAudio: true, audioFormat: 'mp3', audioQuality: '0', maxFilesize: '48M', socketTimeout: 30, retries: 1 });
+          await runYtDlp(['--output',output,'--no-playlist','--no-warnings','--format','bestaudio/best','--extract-audio','--audio-format','mp3','--audio-quality','0','--max-filesize','48M','--socket-timeout','25','--retries','1','--',sess.url], 90000, 1024 * 1024);
           const file = fs.readdirSync(tmpDir).map(n => path.join(tmpDir,n)).find(f => /\.mp3$/i.test(f) && fs.statSync(f).isFile());
           if (!file) throw new Error('MP3 output file missing; check ffmpeg');
           await uploadTelegramFile('sendAudio', chatId, 'audio', file, '🎧 <b>' + title + '</b>');
@@ -1490,7 +1667,7 @@ ${esc(pending.shortUrl)}`,
     text += '👋 Xin chào Admin <b>' + esc(name) + '</b>\n\n';
     text += '🛠 <b>QUẢN TRỊ HỆ THỐNG</b>\n';
     text += '└─ Quản lý key, giá, game và API trong Bảng quản trị.\n\n';
-    text += '📖 User menu: /menu · /help\n';
+    text += '📖 Hướng dẫn: /help\n';
     text += '━━━━━━━━━━━━━━━━━━━━━━━━\n';
     text += '💬 Hỗ trợ: <b>@SunNetWin</b>';
     const rows = [];
@@ -1557,29 +1734,25 @@ Chọn lệnh bên dưới và làm theo từng bước:
 <blockquote>Nhập key ALL GAME đã nhận để kích hoạt trên trang công cụ.
 📌 <b>Ví dụ:</b> <code>/nhapkey ABCD-1234</code></blockquote>
 
-🧾 <b>CÁC LỆNH TÀI KHOẢN & TRẠNG THÁI</b>
+🧾 <b>CÁC LỆNH TÀI KHOẢN</b>
 <blockquote>
 • <code>/mykey</code> — xem key và thời hạn đang dùng.
 • <code>/id</code> — xem Telegram ID.
-• <code>/status</code> — xem yêu cầu đang chờ xử lý.
-• <code>/check</code> — kiểm tra trạng thái tài khoản.
-• <code>/checkip</code> — xem thông tin IP.
-• <code>/checkdevice</code> — xem thiết bị đã liên kết.
-• <code>/resetkeytx KEY</code> — gửi yêu cầu reset thiết bị key.
-• <code>/version</code> — xem phiên bản bot.
+• <code>/resetkeytx KEY</code> — reset thiết bị của key thuộc bạn.
 </blockquote>
 
-🧰 <b>CÁC LỆNH TIỆN ÍCH</b>
+🧰 <b>TRA CỨU & PHÂN TÍCH</b>
 <blockquote>
+• <code>/infotiktok username</code> — phân tích thông tin công khai tài khoản TikTok.
+• <code>/videotiktok LINK</code> — tra cứu thông tin video TikTok.
+• <code>/checkfb LINK</code> — tra cứu Facebook công khai.
+• <code>/checkig LINK</code> — tra cứu Instagram công khai.
+• <code>/checkyt LINK</code> — tra cứu YouTube công khai.
+• <code>/toolmd5</code> — nhận MD5 32 ký tự hoặc SHA-256 64 ký tự, tự nhận diện và phân tích (mở quyền Link4M một lần).
 • <code>/support</code> — liên hệ hỗ trợ.
 • <code>/feedback</code> — gửi góp ý cho Admin.
-• <code>/infotiktok username</code> — xem thông tin kênh TikTok.
-• <code>/videotiktok LINK</code> — xem thông tin video TikTok.
-• <code>/checkfb LINK</code> — kiểm tra liên kết Facebook.
-• <code>/checkig LINK</code> — kiểm tra liên kết Instagram.
-• <code>/checkyt LINK</code> — kiểm tra liên kết YouTube.
 • <code>/cancel</code> — hủy thao tác đang thực hiện.
-• <code>/help</code> hoặc <code>/menu</code> — mở lại danh sách lệnh.
+• <code>/help</code> — mở lại danh sách lệnh.
 </blockquote>`;
     const rows = [];
     const appBase = ensureHttps(process.env.PUBLIC_URL || process.env.WEB_URL || '');
@@ -2310,15 +2483,18 @@ Lượt còn lại hôm nay: <b>${Math.max(0, maxPerDay - rec.count)}</b>/${maxP
     const urlMatch = username.match(/tiktok\.com\/@([A-Za-z0-9._]+)/i);
     if (urlMatch) username = urlMatch[1];
     username = username.replace(/^@/, '').split(/[/?#\s]/)[0];
-    if (!username || username.length < 2) throw new Error('Username/link không hợp lệ.');
+    if (!/^[A-Za-z0-9._]{2,24}$/.test(username)) throw new Error('Username TikTok không hợp lệ.');
     const profileUrl = `https://www.tiktok.com/@${username}`;
     const headers = {
       'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
       'accept-language': 'vi-VN,vi;q=0.9,en;q=0.8'
     };
+    let hasPublicData = false;
     let info = {
       username, nickname: username, avatar: '', bio: '', verified: false, private: false,
-      followers: null, following: null, likes: null, videos: null, createTime: null, profileUrl
+      followers: null, following: null, likes: null, videos: null, createTime: null,
+      userId: '', secUid: '', region: '', language: '', bioLink: '', friendCount: null,
+      profileUrl, dataSource: 'TikTok public profile'
     };
     // 1) oEmbed — nickname + thumb
     try {
@@ -2329,6 +2505,7 @@ Lượt còn lại hôm nay: <b>${Math.max(0, maxPerDay - rec.count)}</b>/${maxP
         info.nickname = d.author_name || d.title || username;
         info.avatar = d.thumbnail_url || '';
         info.bio = (d.title || '').slice(0, 200);
+        hasPublicData = !!(d.author_name || d.thumbnail_url || d.title);
       }
     } catch {}
     // 2) HTML page — SIGI_STATE / universal data for stats
@@ -2353,6 +2530,7 @@ Lượt còn lại hôm nay: <b>${Math.max(0, maxPerDay - rec.count)}</b>/${maxP
             if (first) user = { user: first, stats: detail.stats?.[first.id] || detail.statsList?.[first.id] };
           }
           if (user?.user) {
+            hasPublicData = true;
             const u = user.user;
             const s = user.stats || {};
             info.nickname = u.nickname || info.nickname;
@@ -2360,16 +2538,22 @@ Lượt còn lại hôm nay: <b>${Math.max(0, maxPerDay - rec.count)}</b>/${maxP
             info.bio = u.signature || info.bio;
             info.verified = !!u.verified;
             info.private = !!u.privateAccount;
+            info.userId = String(u.id || u.uid || '');
+            info.secUid = String(u.secUid || '');
+            info.region = String(u.region || u.language || '');
+            info.language = String(u.language || '');
+            info.bioLink = String(u.bioLink?.link || u.bioLink?.url || u.bioLink || '');
             info.followers = s.followerCount ?? null;
             info.following = s.followingCount ?? null;
             info.likes = s.heartCount ?? s.heart ?? null;
             info.videos = s.videoCount ?? null;
+            info.friendCount = s.friendCount ?? null;
             if (u.createTime) info.createTime = Number(u.createTime) * (String(u.createTime).length <= 10 ? 1000 : 1);
           }
         }
       }
     } catch {}
-    if (!info.nickname && !info.avatar) throw new Error('Không lấy được info (user ẩn / không tồn tại).');
+    if (!hasPublicData) throw new Error('TikTok không trả dữ liệu công khai (tài khoản có thể ẩn, không tồn tại hoặc TikTok đang giới hạn truy cập).');
     return info;
   }
 
@@ -3637,7 +3821,6 @@ hoặc: <code>/setbank VCB 0123456789 NGUYEN VAN A</code>`);
     }
     if (data.startsWith('ttdl:')) return downloadTikTokAndSend(chatId, fromId, data.slice(5));
     if (data === 'cmd:start') { if (!(await enforceChannelGate(chatId, fromId))) return; return showStart(chatId, displayName(cq.from), cq.from); }
-    if (data === 'cmd:menu') return showUserMenu(chatId);
     // Admin controls are handled only in the web admin index.
     if (data.startsWith('adm:') || data.startsWith('ap:') || data.startsWith('rj:')) {
       try { await tg('answerCallbackQuery', { callback_query_id: cq.id, text: 'Quản lý tại Bảng quản trị', show_alert: true }); } catch {}
@@ -3880,6 +4063,17 @@ hoặc: <code>/setbank VCB 0123456789 NGUYEN VAN A</code>`);
       });
     } catch (e) {}
 
+    // Người dùng gửi file cho /toolmd5 sau khi đã mở quyền vĩnh viễn.
+    if (message.document) {
+      const md5Session = sessions[fromId];
+      if (!md5Session || md5Session.type !== 'md5_wait_file') {
+        return send(chatId, '📎 Để phân tích file, hãy gõ /toolmd5 trước rồi gửi file .txt/.csv/.log/.json/.md5/.sha256.');
+      }
+      if (!(await enforceFileUnlock(chatId, fromId, 'toolmd5'))) return;
+      md5Session.startedAt = Date.now(); options.saveSessions(sessions);
+      return reportMd5File(chatId, message.document);
+    }
+
     // photo proofs
     if (message.photo?.length) {
       const session = sessions[fromId];
@@ -3892,6 +4086,17 @@ hoặc: <code>/setbank VCB 0123456789 NGUYEN VAN A</code>`);
 
     if (!text) return;
 
+    const md5Session = sessions[fromId];
+    if (md5Session && md5Session.type === 'md5_wait_file' && !text.startsWith('/')) {
+      if (Date.now() - Number(md5Session.startedAt || 0) > 30 * 60 * 1000) {
+        delete sessions[fromId]; options.saveSessions(sessions);
+        return send(chatId, '⌛ Phiên /toolmd5 đã hết hạn. Gõ lại /toolmd5 để mở phiên mới.');
+      }
+      if (!(await enforceFileUnlock(chatId, fromId, 'toolmd5'))) return;
+      delete sessions[fromId]; options.saveSessions(sessions);
+      return reportMd5Input(chatId, text, 'văn bản người dùng gửi');
+    }
+
     const waitingTikTok = sessions[fromId];
     if (waitingTikTok && waitingTikTok.type === 'tiktok_wait_url' && !text.startsWith('/')) {
       delete sessions[fromId]; options.saveSessions(sessions);
@@ -3902,14 +4107,13 @@ hoặc: <code>/setbank VCB 0123456789 NGUYEN VAN A</code>`);
     if (text.startsWith('/') && isAdmin(fromId)) {
       const adminCmd = text.split(/\s+/)[0].toLowerCase().replace(/^\//, '').split('@')[0];
       const customerCommands = new Set([
-        'start','help','menu','support','hotro','status',
+        'start','help','support','hotro',
         'muakeytx','buy','mykey','my_key',
         'getkey','getkeyv1','getkeyv2','nhapkey','activate','sunwindemo','autocuoclc79','aucuoclc79vip','autocuoclc79vip','taivdtik','setfile','setdesc',
         'feedback','infotiktok','videotiktok','infotik','checktt','tiktok','tt',
-        'cancel','done','resetkeytx','resetkey','id','myid','check','checkip','ip',
-        'checkdevice','device','checkfb','infofb','facebook','fb',
+        'cancel','done','resetkeytx','resetkey','id','myid','checkfb','infofb','facebook','fb',
         'checkig','instagram','ig','checkyt','youtube','yt',
-        'version','ver','server'
+        'server','toolmd5','md5'
       ]);
       const adminBase = ensureHttps(process.env.PUBLIC_URL || process.env.WEB_URL || '');
       if (!customerCommands.has(adminCmd)) {
@@ -3925,14 +4129,13 @@ hoặc: <code>/setbank VCB 0123456789 NGUYEN VAN A</code>`);
     // Bot chỉ là Key Center; mọi cấu hình/quản trị nằm trong Index Admin.
     // Also allow TikTok lookup + getkeyv2 + done
     const keyCenterCommands = new Set([
-      'start','menu','help','support','hotro',
-      'getkey','getkeyv1','getkeyv2','status','sunwindemo','autocuoclc79','aucuoclc79vip','autocuoclc79vip','taivdtik',
+      'start','help','support','hotro',
+      'getkey','getkeyv1','getkeyv2','sunwindemo','autocuoclc79','aucuoclc79vip','autocuoclc79vip','taivdtik',
       'nhapkey','activate','muakeytx','buy','mykey','my_key',
       'cancel','feedback','done','resetkeytx','resetkey',
       'infotiktok','videotiktok','infotik','checktt','tiktok','tt',
-      'check','id','myid','checkip','ip','checkdevice','device',
-      'checkfb','infofb','facebook','fb','checkig','instagram','ig',
-      'checkyt','youtube','yt','version','ver','server',
+      'id','myid','checkfb','infofb','facebook','fb','checkig','instagram','ig',
+      'checkyt','youtube','yt','server','toolmd5','md5',
       
     ]);
     if (!keyCenterCommands.has(cmd) && !['done','xong','hoanthanh'].includes(text.toLowerCase().trim())) {
@@ -3955,6 +4158,24 @@ hoặc: <code>/setbank VCB 0123456789 NGUYEN VAN A</code>`);
       if (mt.enabled && Array.isArray(mt.lockedCommands) && mt.lockedCommands.includes('*')) {
         return send(chatId, '🛠 ' + (mt.message || 'Bot đang bảo trì.'));
       }
+    }
+
+    if (cmd === 'toolmd5' || cmd === 'md5') {
+      sessions[fromId] = { type: 'md5_wait_file', startedAt: Date.now() };
+      options.saveSessions(sessions);
+      if (!(await enforceFileUnlock(chatId, fromId, 'toolmd5'))) return;
+      if (argText) { delete sessions[fromId]; options.saveSessions(sessions); return reportMd5Input(chatId, argText, 'nội dung sau lệnh /toolmd5'); }
+      return send(chatId, `🔬 <b>TOOL HASH PRO · MD5 / SHA-256</b>
+━━━━━━━━━━━━━━━━━━
+Gửi mã <b>MD5 đúng 32 ký tự</b> hoặc <b>SHA-256 đúng 64 ký tự</b>. Bot tự nhận diện loại hash.
+
+📊 Báo cáo gồm: loại hash, độ dài bit/byte, bit 1/0, entropy, phân bố hex, chuỗi lặp; kèm 3 viên xúc xắc mô phỏng và tổng Tài/Xỉu tham khảo.
+
+📌 MD5: <code>d41d8cd98f00b204e9800998ecf8427e</code>
+📌 SHA-256: <code>e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855</code>
+📎 Hoặc gõ <code>/toolmd5</code> rồi gửi file <code>.txt .csv .log .json .md5 .sha256</code> (tối đa 5 MB).
+
+⚠️ Dãy xúc xắc là mô phỏng từ hash, không phải kết quả thật. Hash đơn lẻ không thể tiết lộ kết quả ván game hoặc tạo phần trăm thắng đáng tin cậy.`);
     }
 
     if (cmd === 'setfile') {
@@ -3992,16 +4213,10 @@ hoặc: <code>/setbank VCB 0123456789 NGUYEN VAN A</code>`);
       if (['feedback', 'gopy'].includes(payload.toLowerCase())) { const ss = options.getSessions(); ss[fromId] = { type: 'feedback', startedAt: Date.now() }; options.saveSessions(ss); return send(chatId, '📝 <b>Gửi góp ý</b>\nGửi 1 ảnh kèm nội dung ở phần chú thích ảnh. Admin sẽ xem trước khi đăng.'); }
       return showStart(chatId, displayName(from), from);
     }
-    if (cmd === 'menu' || cmd === 'help') return showUserMenu(chatId);
+    if (cmd === 'help') return showUserMenu(chatId);
     if (cmd === 'feedback') {
       sessions[fromId] = { type: 'feedback', startedAt: Date.now() }; options.saveSessions(sessions);
       return send(chatId, '📝 <b>GỬI GÓP Ý</b>\nGửi <b>1 ảnh</b> kèm nội dung ở phần chú thích (caption).\nAdmin sẽ duyệt trước khi đăng.\n\nVí dụ: “Bảng lịch sử trên iPhone bị tràn màn hình”.');
-    }
-
-    if (cmd === 'status') {
-      const pending = (options.getRequests ? options.getRequests() : []).filter(r => r.telegramId === fromId && r.status === 'pending');
-      if (!pending.length) return send(chatId, '✅ Không có yêu cầu chờ.');
-      return send(chatId, `⏳ <b>${pending.length} yêu cầu</b>\n` + pending.map(r => `• #${r.id} ${r.type === 'payment' ? '💳' : r.type === 'reset' ? '🔄' : '🎯'}`).join('\n'));
     }
 
     if (cmd === 'getkey' || cmd === 'getkeyv1') {
@@ -4065,7 +4280,7 @@ Hoặc mở trang công cụ, dán key vào ô kích hoạt.
     }
 
     // ===== TikTok commands (cooldown 30s) =====
-    if (cmd === 'infotiktok' || cmd === 'infotik' || cmd === 'checktt') {
+    if (cmd === 'infotiktok' || cmd === 'infotik' || cmd === 'checktt' || cmd === 'tiktok' || cmd === 'tt') {
       const input = argText || args.join(' ');
       if (!input) return send(chatId, '📌 Dùng: <code>/infotiktok username</code>\nVD: <code>/infotiktok ngth.2010</code>');
       // simple per-user cooldown
@@ -4076,36 +4291,40 @@ Hoặc mở trang công cụ, dán key vào ô kích hoạt.
         return send(chatId, `⏳ Cooldown còn <b>${left}s</b>.`);
       }
       userCmdLog.set(cdKey, Date.now());
+      let profileProgress = null;
       try {
-        await send(chatId, '🔍 Đang lấy thông tin TikTok...');
+        profileProgress = await send(chatId, '🔍 Đang tra cứu hồ sơ TikTok công khai (tối đa khoảng 20 giây)...');
         const info = await lookupTikTok(input);
         const lines = [
-          '📱 <b>THÔNG TIN TIKTOK</b>',
+          '📱 <b>HỒ SƠ TIKTOK · PHÂN TÍCH DỮ LIỆU CÔNG KHAI</b>',
           '━━━━━━━━━━━━━━━━━━━━',
-          `👤 <b>${esc(info.nickname || info.username)}</b>`,
-          `🔗 @${esc(info.username)}`,
-          info.verified ? '✅ Đã xác minh' : '',
-          info.private ? '🔒 Tài khoản riêng tư' : '',
-          info.bio ? `📝 ${esc(String(info.bio).slice(0, 150))}` : '',
-          `👥 Followers: <b>${info.followers != null ? fmt(info.followers) : '—'}</b>`,
-          `➡️ Following: <b>${info.following != null ? fmt(info.following) : '—'}</b>`,
-          `❤️ Likes: <b>${info.likes != null ? fmt(info.likes) : '—'}</b>`,
-          `🎬 Videos: <b>${info.videos != null ? fmt(info.videos) : '—'}</b>`,
-          info.createTime ? `📅 Tạo: ${new Date(info.createTime).toLocaleDateString('vi-VN')}` : '',
-          `🌐 ${esc(info.profileUrl || '')}`
-        ].filter(Boolean).join('\n');
-        if (info.avatar) {
-          try {
-            await sendPhoto(chatId, info.avatar, { caption: lines });
-          } catch {
-            await send(chatId, lines);
-          }
-        } else {
-          await send(chatId, lines);
-        }
+          `👤 Tên hiển thị: <b>${esc(info.nickname || info.username)}</b>`,
+          `🆔 Username: <code>@${esc(info.username)}</code>`,
+          `🔢 User ID: <code>${esc(info.userId || 'Không công khai')}</code>`,
+          `🔐 SecUID: <code>${esc(info.secUid || 'Không công khai')}</code>`,
+          `✅ Xác minh: <b>${info.verified ? 'Đã xác minh' : 'Không có dấu xác minh công khai'}</b>`,
+          `🔒 Riêng tư: <b>${info.private ? 'Có' : 'Không / không xác định'}</b>`,
+          `🌍 Khu vực: <b>${esc(info.region || '—')}</b> · Ngôn ngữ: <b>${esc(info.language || '—')}</b>`,
+          `📝 Bio: ${esc(String(info.bio || '—').slice(0, 220))}`,
+          `🔗 Bio link: ${esc(info.bioLink || '—')}`,
+          '━━━━━━━━━━━━━━━━━━━━',
+          `👥 Người theo dõi: <b>${info.followers != null ? fmt(info.followers) : '—'}</b>`,
+          `➡️ Đang theo dõi: <b>${info.following != null ? fmt(info.following) : '—'}</b>`,
+          `🤝 Bạn bè: <b>${info.friendCount != null ? fmt(info.friendCount) : '—'}</b>`,
+          `❤️ Tổng lượt thích: <b>${info.likes != null ? fmt(info.likes) : '—'}</b>`,
+          `🎬 Số video: <b>${info.videos != null ? fmt(info.videos) : '—'}</b>`,
+          `📅 Ngày tạo tài khoản: <b>${info.createTime ? new Date(info.createTime).toLocaleString('vi-VN') : 'Không công khai'}</b>`,
+          `🌐 Hồ sơ: ${esc(info.profileUrl || '')}`,
+          `📡 Nguồn: ${esc(info.dataSource)} · Chỉ dữ liệu công khai mà TikTok cho phép truy cập.`,
+          `ℹ️ Trường TikTok không công khai/đòi đăng nhập sẽ hiện dấu —; bot không truy cập dữ liệu riêng tư.`
+        ].join('\n');
+        await send(chatId, lines);
+        if (info.avatar) { try { await sendPhoto(chatId, info.avatar, { caption: '🖼 Ảnh đại diện công khai của @' + esc(info.username) }); } catch (_) {} }
       } catch (e) {
         logLine('[user-tiktok] lookup failed: ' + String(e && e.message || e).slice(0, 240));
         await send(chatId, '⚠️ Hiện chưa thể lấy thông tin tài khoản này. Bạn kiểm tra lại tên hoặc thử lại sau nhé.');
+      } finally {
+        if (profileProgress && profileProgress.message_id) tg('deleteMessage', { chat_id: chatId, message_id: profileProgress.message_id }).catch(() => null);
       }
       return;
     }
@@ -4113,9 +4332,11 @@ Hoặc mở trang công cụ, dán key vào ô kích hoạt.
     if (cmd === 'videotiktok' || cmd === 'videotik') {
       let input = argText || args.join(' ');
       if (/^\d{10,30}$/.test(input)) input = 'https://www.tiktok.com/video/' + input;
-      if (!input || !/tiktok\.com/i.test(input)) {
+      const safeTikTokUrl = validTikTokUrl(input);
+      if (!safeTikTokUrl) {
         return send(chatId, '📌 Dùng: <code>/videotiktok {link hoặc ID}</code>\nVD link: <code>/videotiktok https://www.tiktok.com/@user/video/7231338487075638570</code>\nVD ID: <code>/videotiktok 7231338487075638570</code>');
       }
+      input = safeTikTokUrl;
       const cdKey = 'ttv_' + fromId;
       const last = userCmdLog.get(cdKey) || 0;
       if (Date.now() - last < 30000) {
@@ -4123,35 +4344,39 @@ Hoặc mở trang công cụ, dán key vào ô kích hoạt.
         return send(chatId, `⏳ Cooldown còn <b>${left}s</b>.`);
       }
       userCmdLog.set(cdKey, Date.now());
+      let videoProgress = null;
       try {
-        await send(chatId, '🔍 Đang lấy thông tin video...');
-        // Reuse lookupTikTok oEmbed path for video
-        const headers = {
-          'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15',
-          'accept-language': 'vi-VN,vi;q=0.9'
-        };
-        const oembedUrl = `https://www.tiktok.com/oembed?url=${encodeURIComponent(input)}`;
-        const r = await fetch(oembedUrl, { signal: AbortSignal.timeout(10000), headers });
-        if (!r.ok) throw new Error('Không lấy được oEmbed');
-        const d = await r.json();
-        const lines = [
-          '🎬 <b>THÔNG TIN VIDEO TIKTOK</b>',
-          '━━━━━━━━━━━━━━━━━━━━',
-          `📌 ${esc((d.title || '').slice(0, 200))}`,
-          `👤 Author: <b>${esc(d.author_name || '—')}</b>`,
-          d.author_url ? `🔗 ${esc(d.author_url)}` : '',
-          d.provider_name ? `🌐 ${esc(d.provider_name)}` : '',
-          `🔗 ${esc(input)}`
-        ].filter(Boolean).join('\n');
-        if (d.thumbnail_url) {
-          try { await sendPhoto(chatId, d.thumbnail_url, { caption: lines }); }
-          catch { await send(chatId, lines); }
-        } else {
-          await send(chatId, lines);
+        videoProgress = await send(chatId, '🔍 Đang đọc dữ liệu video TikTok (giới hạn 35 giây)...');
+        let d = null;
+        try {
+          const raw = await runYtDlp(['--dump-single-json','--skip-download','--no-playlist','--no-warnings','--socket-timeout','15','--retries','1','--',input], 35000, 4 * 1024 * 1024);
+          const v = JSON.parse(raw);
+          d = { title:v.title, author_name:v.uploader || v.channel, author_url:v.uploader_url || v.channel_url, provider_name:'TikTok', thumbnail_url:v.thumbnail, id:v.id, duration:v.duration, view_count:v.view_count, like_count:v.like_count, comment_count:v.comment_count, upload_date:v.upload_date, description:v.description };
+        } catch (firstError) {
+          const headers = { 'user-agent':'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15', 'accept-language':'vi-VN,vi;q=0.9' };
+          const r = await fetch(`https://www.tiktok.com/oembed?url=${encodeURIComponent(input)}`, { signal:AbortSignal.timeout(10000), headers });
+          if (!r.ok) throw firstError;
+          d = await r.json();
         }
+        const nf = v => v == null ? '—' : Number(v).toLocaleString('vi-VN');
+        const lines = [
+          '🎬 <b>THÔNG TIN VIDEO TIKTOK</b>', '━━━━━━━━━━━━━━━━━━━━',
+          `📌 <b>${esc((d.title || 'Video TikTok').slice(0, 180))}</b>`,
+          `👤 Tác giả: <b>${esc(d.author_name || '—')}</b>`,
+          `🆔 ID: <code>${esc(d.id || (/\d{10,30}/.exec(input)||[])[0] || '—')}</code>`,
+          `⏱ Thời lượng: <b>${d.duration ? Math.floor(d.duration/60)+':'+String(Math.floor(d.duration%60)).padStart(2,'0') : '—'}</b>`,
+          `👁 Lượt xem: <b>${nf(d.view_count)}</b> · ❤️ Thích: <b>${nf(d.like_count)}</b> · 💬 Bình luận: <b>${nf(d.comment_count)}</b>`,
+          `📅 Ngày đăng: <b>${d.upload_date || '—'}</b>`,
+          `📝 Mô tả: ${esc(String(d.description || '—').slice(0, 220))}`,
+          d.author_url ? `🔗 Kênh: ${esc(d.author_url)}` : '', `🔗 Video: ${esc(input)}`
+        ].filter(Boolean).join('\n');
+        await send(chatId, lines);
+        if (d.thumbnail_url) { try { await sendPhoto(chatId, d.thumbnail_url, { caption: '🖼 Ảnh xem trước video TikTok' }); } catch (_) {} }
       } catch (e) {
         logLine('[user-tiktok-video] lookup failed: ' + String(e && e.message || e).slice(0, 240));
         await send(chatId, '⚠️ Hiện chưa thể lấy thông tin video này. Bạn kiểm tra lại đường dẫn hoặc thử lại sau nhé.');
+      } finally {
+        if (videoProgress && videoProgress.message_id) tg('deleteMessage', { chat_id: chatId, message_id: videoProgress.message_id }).catch(() => null);
       }
       return;
     }
@@ -4213,32 +4438,6 @@ Bạn có thể đăng nhập lại trên thiết bị mới trong Mini App.
     if (cmd === 'id' || cmd === 'myid') {
       return send(chatId, '🆔 Telegram ID:\n<code>' + fromId + '</code>\nUsername: @' + (from.username || '—'));
     }
-    if (cmd === 'check') {
-      return send(chatId,
-`🔍 <b>Lệnh check thông tin:</b>
-<blockquote><b>/id</b> · <b>/checkip</b> · <b>/checkdevice</b>
-Ví dụ: <code>/checkip</code></blockquote>
-<blockquote><b>/checktt {username}</b> — TikTok
-Ví dụ: <code>/checktt ngth.2010</code>
-⏳ Cooldown: 30 giây</blockquote>
-<blockquote><b>/checkfb {user|link}</b> — Facebook
-Ví dụ: <code>/checkfb facebook.com/zuck</code></blockquote>
-<blockquote><b>/checkig {@user}</b> — Instagram
-Ví dụ: <code>/checkig @instagram</code></blockquote>
-<blockquote><b>/checkyt {@channel|link}</b> — YouTube
-Ví dụ: <code>/checkyt @MrBeast</code></blockquote>
-<blockquote><b>/version</b> · <b>/server</b> — Thông tin bot và máy chủ</blockquote>
-🎁 /getkey · 🔗 /getkeyv2 · 💳 /muakeytx · 🔑 /mykey`
-      );
-    }
-    if (cmd === 'checkip' || cmd === 'ip') {
-      const p = (typeof userProfiles!=='undefined' && userProfiles[fromId]) ? userProfiles[fromId] : null;
-      return send(chatId, '🌐 <b>IP</b>\n<code>'+(p&&p.lastIp?p.lastIp:'Chưa có — mở Mini App 1 lần')+'</code>\n🕐 GMT+7');
-    }
-    if (cmd === 'checkdevice' || cmd === 'device') {
-      const p = (typeof userProfiles!=='undefined' && userProfiles[fromId]) ? userProfiles[fromId] : null;
-      return send(chatId, '📱 <b>THIẾT BỊ</b>\nUA: <code>'+esc(String(p&&p.lastUa||'Mở Mini App để cập nhật').slice(0,140))+'</code>\nDevice: <code>'+esc(String(p&&p.lastDeviceHash||'—').slice(0,16))+'</code>');
-    }
     if (cmd === 'mykey' || cmd === 'my_key') {
       const userKeys = (keys||[]).filter(k => String(k.telegramId)===fromId);
       if (!userKeys.length) return send(chatId, '🔑 Bạn chưa có key.\n🎁 /getkeyv1 · 💎 /muakeytx');
@@ -4253,11 +4452,12 @@ Ví dụ: <code>/checkyt @MrBeast</code></blockquote>
       const cfg = (options.getConfig&&options.getConfig())||{};
       return send(chatId, '💬 <b>HỖ TRỢ</b>\n'+(cfg.supportUrl||'https://t.me/SunNetWin')+'\nAdmin: @SunNetWin');
     }
-    if (cmd === 'version' || cmd === 'ver') {
-      return send(chatId, '📦 <b>VIP FINAL</b> · All-bot admin');
-    }
     if (cmd === 'server') {
       return send(chatId, '🖥️ Online · Feeds: '+Object.keys(FEEDS).length+' · '+new Date().toLocaleString('vi-VN'));
+    }
+    if (cmd === 'cancel') {
+      delete sessions[fromId]; options.saveSessions(sessions);
+      return send(chatId, '✅ Đã hủy phiên thao tác hiện tại.');
     }
     // —— Check tài khoản MXH ——
     if (cmd === 'checktt' || cmd === 'infotik' || cmd === 'tiktok' || cmd === 'tt') {
@@ -4362,7 +4562,7 @@ ${info.private ? '🔒 Private' : '🌐 Public'}
     }
 
     if (text.startsWith('/')) {
-      return send(chatId, '❓ Lệnh không rõ. Gõ /start · /check · /checktt @user · /help');
+      return send(chatId, '❓ Lệnh không rõ. Gõ /start hoặc /help để xem các lệnh đang hỗ trợ.');
     }
   }
 
@@ -4425,6 +4625,12 @@ ${info.private ? '🔒 Private' : '🌐 Public'}
       if (cmd === 'sunwindemo') return sendStoredAsset(telegramId, 'sunwindemo');
       if (['autocuoclc79','aucuoclc79vip','autocuoclc79vip'].includes(cmd)) return sendStoredAsset(telegramId, 'autocuocLC79');
       if (cmd === 'taivdtik') return send(telegramId, '✅ Quyền tải đã mở. Gửi lại lệnh <code>/taivdtik</code> kèm liên kết TikTok để chọn MP3, video hoặc cả hai.');
+      if (cmd === 'toolmd5' || cmd === 'md5') {
+        const activeSessions = options.getSessions();
+        activeSessions[String(telegramId)] = { type: 'md5_wait_file', startedAt: Date.now() };
+        options.saveSessions(activeSessions);
+        return send(telegramId, '✅ <b>ĐÃ MỞ QUYỀN TOOL HASH VĨNH VIỄN</b>\nQuyền đã được lưu theo Telegram ID. Gửi ngay mã MD5 32 ký tự hoặc SHA-256 64 ký tự; bot tự nhận diện và phân tích. Bạn cũng có thể gửi file .txt/.csv/.md5/.sha256.');
+      }
       return null;
     },
     notifyAdmins,
@@ -4432,33 +4638,28 @@ ${info.private ? '🔒 Private' : '🌐 Public'}
   };
   // Telegram command keyboard: keep the main customer commands aligned with /help.
   tg('setMyCommands', { commands: [
-    { command: 'start', description: 'Mở menu / Mini App' },
-    { command: 'help', description: 'Xem toàn bộ lệnh bot' },
-    { command: 'menu', description: 'Mở lại danh sách lệnh' },
+    { command: 'start', description: 'Mở bot và trang công cụ' },
+    { command: 'help', description: 'Xem danh sách lệnh' },
     { command: 'getkey', description: 'Làm nhiệm vụ mở MD5 miễn phí' },
-    { command: 'getkeyv2', description: 'Vượt 2 link nhận key ALL GAME' },
+    { command: 'getkeyv2', description: 'Vượt 2 liên kết nhận key ALL GAME' },
+    { command: 'toolmd5', description: 'Phân tích MD5 32 / SHA-256 64 và mô phỏng xúc xắc' },
     { command: 'sunwindemo', description: 'Nhận file Sunwin Demo' },
     { command: 'aucuoclc79vip', description: 'Nhận file Auto cược LC79 VIP' },
     { command: 'taivdtik', description: 'Tải TikTok MP3 / video' },
+    { command: 'infotiktok', description: 'Phân tích hồ sơ TikTok công khai' },
+    { command: 'videotiktok', description: 'Tra cứu thông tin video TikTok' },
+    { command: 'checkfb', description: 'Tra cứu Facebook công khai' },
+    { command: 'checkig', description: 'Tra cứu Instagram công khai' },
+    { command: 'checkyt', description: 'Tra cứu YouTube công khai' },
     { command: 'muakeytx', description: 'Xem gói và mua key' },
     { command: 'nhapkey', description: 'Kích hoạt key ALL GAME' },
-    { command: 'mykey', description: 'Kiểm tra key đang dùng' },
+    { command: 'mykey', description: 'Xem key đang sử dụng' },
     { command: 'id', description: 'Xem Telegram ID' },
-    { command: 'status', description: 'Xem yêu cầu đang chờ' },
-    { command: 'check', description: 'Kiểm tra trạng thái tài khoản' },
-    { command: 'checkip', description: 'Xem thông tin IP' },
-    { command: 'checkdevice', description: 'Xem thiết bị đã liên kết' },
-    { command: 'resetkeytx', description: 'Yêu cầu reset thiết bị key' },
+    { command: 'resetkeytx', description: 'Reset thiết bị của key' },
     { command: 'support', description: 'Liên hệ hỗ trợ' },
-    { command: 'infotiktok', description: 'Thông tin kênh TikTok' },
-    { command: 'videotiktok', description: 'Thông tin video TikTok' },
-    { command: 'checkfb', description: 'Kiểm tra Facebook' },
-    { command: 'checkig', description: 'Kiểm tra Instagram' },
-    { command: 'checkyt', description: 'Kiểm tra YouTube' },
     { command: 'feedback', description: 'Gửi góp ý' },
     { command: 'cancel', description: 'Hủy thao tác hiện tại' },
-    { command: 'done', description: 'Xác nhận đã hoàn thành bước' },
-    { command: 'version', description: 'Xem phiên bản bot' }
+    { command: 'done', description: 'Xác nhận đã hoàn thành bước' }
   ] }).catch(e => console.warn('[telegram] setMyCommands:', e.message));
   loop();
   console.log(`[telegram] cmd-only bot started; admins=${adminIds.size}`);
@@ -5763,6 +5964,10 @@ app.get('/api/file-unlock/pass', async (req, res) => {
   if (pending.expiresAt <= Date.now()) { delete pendingFileUnlockByCode[code]; savePendingFileUnlocks(); return res.status(410).type('html').send('<!doctype html><meta charset="utf-8"><title>Hết hạn</title><p>Liên kết đã hết hạn. Quay lại bot để tạo liên kết mới.</p>'); }
   const uid = String(pending.userId || '');
   if (!uid) return res.status(403).type('html').send('Không xác định được tài khoản yêu cầu.');
+  if (fileUnlocks[uid] && fileUnlocks[uid].revoked === true) {
+    delete pendingFileUnlockByCode[code]; savePendingFileUnlocks();
+    return res.status(403).type('html').send('Quyền truy cập đã bị Admin thu hồi. Hãy liên hệ hỗ trợ nếu cần mở lại.');
+  }
   grantMd5FreeAccess(uid, 'link4m-one-time-unlock', true);
   delete pendingFileUnlockByCode[code];
   savePendingFileUnlocks();
@@ -6329,25 +6534,30 @@ app.get('/api/predict', requireUser, async (req, res) => {
   const ms = f.engine.marketState || ensemble.market || {};
   const configuredGameType = (cfg.group === 'sicbo' || f.group === 'sicbo') ? 'sicbo' : (cfg.group === 'md5' || /md5/i.test(String(cfg.variant || '') + ' ' + String(cfg.id || '')) ? 'md5' : 'tx');
   const gameType = configuredGameType || ensemble.gameType || 'tx';
-  // Recalibration only reduces overconfident percentages for TX/MD5; prediction and Sunwin Sicbo logic stay unchanged.
+  // Hiệu chỉnh Bayesian theo từng game, ưu tiên kết quả mới; không phóng đại độ chắc chắn.
   let calibration = null;
-  if (configuredGameType !== 'sicbo' && botSettings.predictionCalibrationEnabled !== false && ensemble && Number.isFinite(Number(ensemble.confidence))) {
-    const outcomes = (f.accuracyHistory || []).slice(0, 100).filter(row => typeof row.hit === 'boolean' || typeof row.correct === 'boolean' || typeof row.ok === 'boolean');
-    const minSamples = Number(botSettings.predictionMinSamples || 12);
-    const cap = Number(botSettings.predictionConfidenceCap || 68);
-    let raw = Number(ensemble.confidence); if (raw > 0 && raw <= 1) raw *= 100;
-    let adjusted = Math.min(raw, cap, 60);
-    if (outcomes.length >= minSamples) {
-      const hits = outcomes.filter(row => row.hit === true || row.correct === true || row.ok === true).length;
-      const rate = hits / outcomes.length * 100;
-      const weight = outcomes.length / (outcomes.length + 30);
-      adjusted = 50 + (Math.min(raw, cap) - 50) * 0.65 + (rate - 50) * 0.35 * weight;
-      adjusted = Math.max(50, Math.min(cap, 60, adjusted));
-      calibration = { samples: outcomes.length, hitRate: +rate.toFixed(1), adjusted: +adjusted.toFixed(1) };
-    } else {
-      adjusted = Math.max(50, Math.min(60, adjusted));
-      calibration = { samples: outcomes.length, hitRate: null, adjusted: +adjusted.toFixed(1) };
-    }
+  if (botSettings.predictionCalibrationEnabled !== false && ensemble && Number.isFinite(Number(ensemble.confidence))) {
+    const outcomes = (f.accuracyHistory || []).filter(row => typeof row.hit === 'boolean' || typeof row.correct === 'boolean' || typeof row.ok === 'boolean').slice(0, 80);
+    const raw = Math.max(50, Math.min(90, Number(ensemble.confidence) <= 1 ? Number(ensemble.confidence) * 100 : Number(ensemble.confidence)));
+    let weightedHits = 0, totalWeight = 0;
+    outcomes.forEach((row, index) => {
+      const hit = row.hit === true || row.correct === true || row.ok === true;
+      const w = Math.pow(0.965, index); // kết quả mới có trọng số cao hơn
+      totalWeight += w;
+      if (hit) weightedHits += w;
+    });
+    // Prior Beta(9,9) giữ tỷ lệ về 50% khi mẫu ít; empirical accuracy không được coi là bảo đảm tương lai.
+    const posteriorRate = (9 + weightedHits) / (18 + totalWeight) * 100;
+    const evidence = totalWeight / (totalWeight + 24);
+    const minSamples = Math.max(6, Number(botSettings.predictionMinSamples || 12));
+    const configuredCap = Math.max(52, Math.min(66, Number(botSettings.predictionConfidenceCap || 63)));
+    const gameCap = configuredGameType === 'sicbo' ? Math.min(configuredCap, 62) : configuredCap;
+    const sampleCap = outcomes.length < minSamples ? 55 : outcomes.length < 25 ? 59 : outcomes.length < 50 ? 62 : gameCap;
+    const modelEdge = raw - 50;
+    const empiricalEdge = posteriorRate - 50;
+    const blendedEdge = modelEdge * (0.72 - evidence * 0.22) + empiricalEdge * (0.28 + evidence * 0.22);
+    const adjusted = Math.max(50, Math.min(sampleCap, 50 + blendedEdge));
+    calibration = { gameType: configuredGameType, samples: outcomes.length, effectiveSamples: +totalWeight.toFixed(1), posteriorHitRate: +posteriorRate.toFixed(1), adjusted: +adjusted.toFixed(1), method: 'recency-weighted-beta' };
     ensemble.confidence = Math.round(adjusted);
   }
   // Tính phiên tiếp theo thật chắc chắn (nhiều nguồn fallback)
